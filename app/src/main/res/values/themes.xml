@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
+    <!-- 앱 본 테마 (스플래시 끝난 뒤 적용됨) -->
     <style name="Theme.Kiku" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- 런치 시 OS가 그리는 스플래시 테마 -->
+    <style name="Theme.Kiku.Splash" parent="Theme.SplashScreen">
+        <!-- 스플래시 배경색 -->
+        <item name="windowSplashScreenBackground">@color/kiku_bg</item>
+        <!-- 가운데 표시되는 아이콘 (키쿠 전경) -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <!-- 스플래시가 끝나면 전환될 본 테마 -->
+        <item name="postSplashScreenTheme">@style/Theme.Kiku</item>
+    </style>
 </resources>

@@ -72,12 +72,12 @@ data class PlaybackStep(
     val pauseAfterMs: Long = 0,
 )
 
-// 한 문장(1단위) → [JP, JP, JP(+정지), KR, WORD_JP, WORD_KR, WORD_JP, WORD_KR, ...]
-fun Sentence.toSteps(index: Int): List<PlaybackStep> = buildList {
-    repeat(JP_REPEAT - 1) { add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE)) }
-    add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = pause)) // 마지막 회차 뒤 정지(해석할 시간)
-    add(PlaybackStep(index, StepKind.KR, kr, Locale.KOREAN))                          // 한국어 해석(음성)
-    words.forEach { w ->                                                              // 단어마다 일→한 한 쌍
+// 한 문장 → 스텝 펼침. 펼치는 방식은 PlaybackPattern(§2.7)이 결정한다.
+fun Sentence.toSteps(index: Int, p: PlaybackPattern): List<PlaybackStep> = buildList {
+    repeat(maxOf(0, p.jpRepeat - 1)) { add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE)) }
+    add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = p.pauseAfterJpMs)) // 마지막 회차 뒤 정지
+    if (p.readKr) add(PlaybackStep(index, StepKind.KR, kr, Locale.KOREAN))
+    if (p.readWords) words.forEach { w ->                                  // 단어마다 일→한 한 쌍
         add(PlaybackStep(index, StepKind.WORD_JP, w.jp, Locale.JAPANESE))
         add(PlaybackStep(index, StepKind.WORD_KR, w.kr, Locale.KOREAN))
     }
@@ -85,11 +85,11 @@ fun Sentence.toSteps(index: Int): List<PlaybackStep> = buildList {
 
 // 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 100문장도 끊김 없이 연속 재생
 fun Clip.toSteps(): List<PlaybackStep> =
-    sentences.flatMapIndexed { index, s -> s.toSteps(index) }
+    sentences.flatMapIndexed { i, s -> s.toSteps(i, s.patternOverride ?: effectivePattern) }
 ```
 
-> `JP_REPEAT = 3` (일본어 3회). 회차는 상수 하나로 조정 — 데이터나 시퀀서를 건드릴 필요 없다.
 > 클립의 모든 문장을 **하나의 평탄한 `steps` 리스트**로 펼치는 게 핵심. 시퀀서 루프는 이 리스트를 처음부터 끝까지 순회하므로 **연속 재생은 기본 동작**이고, **문장 이동은 인덱스 점프**(§2.5 표)로 환원된다.
+> 한 문장을 *어떻게* 펼치냐(반복 횟수·한국어 읽기·단어 읽기·정지)는 전부 `PlaybackPattern`(§2.7)이 쥐고 있어, **콘텐츠 타입(문장 드릴/대화/청해)이 달라져도 시퀀서·백그라운드 재생은 한 줄도 안 바뀐다.**
 
 ### 2.4 speak를 suspend로
 
@@ -160,25 +160,64 @@ PlaybackService (Foreground, type=mediaPlayback)
 
 > **검증 순서 주의:** §9의 "반나절 검증"에서 일본어 한 문장 재생을 확인한 직후, **두 번째로 백그라운드 재생부터** 찔러보는 게 좋다. TTS가 Foreground Service 안에서 화면 꺼진 채 정상 동작하는지가 이 앱의 진짜 기술 리스크이기 때문이다(일부 기기/엔진에서 백그라운드 TTS 제약이 있을 수 있음).
 
----
+### 2.7 콘텐츠 타입 — 문장 드릴 / 대화 / 청해
 
-## 3. 패키지 구조 (MVP)
+콘텐츠는 한 종류가 아니다. 관리자(=나)가 클립마다 형태를 고를 수 있어야 한다.
+
+| 타입(`ClipMode`) | 화자 | 한 문장 펼침(기본 패턴) | 성격 |
+|---|---|---|---|
+| **DRILL** 문장 드릴 (현재) | 없음 | JP×3 → 3초 → KR → 단어(일↔한) | 한 문장 깊게 반복 |
+| **DIALOGUE** 대화(한 문장씩) | A/B 등 | JP×2 → KR → 짧은 정지, 단어 생략 | 턴 주고받으며 학습 |
+| **LISTENING** 청해(멀티턴) | 여럿 | JP×1, KR·단어 생략, 자연스럽게 쭉 | 실전처럼 흐름 듣기 |
+
+**핵심:** 이 셋은 **새 엔진이 아니라 재생 패턴 프리셋**일 뿐이다. 평탄화·시퀀서·백그라운드는 그대로고, 달라지는 건 ① 문장에 화자가 붙느냐, ② 한 문장을 어떻게 펼치냐(`PlaybackPattern`)뿐이다.
+
+```kotlin
+enum class ClipMode { DRILL, DIALOGUE, LISTENING }  // 프리셋 → PlaybackPattern으로 변환
+
+@Serializable
+data class PlaybackPattern(            // ← "마음대로 설정"의 실체
+    val jpRepeat: Int = 3,
+    val pauseAfterJpMs: Long = 3000,
+    val readKr: Boolean = true,
+    val readWords: Boolean = true,
+    val pauseBetweenSentencesMs: Long = 0,
+)
+
+// 프리셋 → 기본 패턴
+fun ClipMode.toPattern(): PlaybackPattern = when (this) {
+    ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseAfterJpMs = 3000, readKr = true,  readWords = true)
+    ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 2, pauseAfterJpMs = 1500, readKr = true,  readWords = false)
+    ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseAfterJpMs = 0,    readKr = false, readWords = false)
+}
+
+// 클립이 실제로 쓰는 패턴: 커스텀 pattern이 있으면 그것, 없으면 mode 프리셋
+val Clip.effectivePattern: PlaybackPattern get() = pattern ?: mode.toPattern()
+```
+
+**자유도(결정):** 프리셋 3개 + 미세조정. 평소엔 `mode` 하나만 고르고, 비틀고 싶을 때만 클립의 `pattern`(전체) 또는 문장의 `patternOverride`(그 문장만)로 덮어쓴다. 위 `Clip.toSteps`(§2.3)가 이 우선순위(`patternOverride` → `pattern` → `mode`)를 적용한다.
+
+**관리 방식(결정):** **JSON 직접 작성**(손 또는 GPT). 인앱 관리자 화면은 MVP 범위 밖 → 추후(§10).
 
 ```
 com.bradlab.kiku
 ├── data
 │   ├── Sentence.kt / Clip.kt / Word.kt   // @Serializable 모델
-│   └── ClipRepository.kt                  // assets/clips/*.json 로드
+│   └── ClipRepository.kt                  // interface — MVP는 AssetClipRepository (추후 Remote로 교체)
 ├── player
 │   ├── PlaybackStep.kt
 │   ├── TtsSequencer.kt                    // TextToSpeech 래퍼 + 시퀀서 루프(상태 보유)
 │   ├── PlaybackService.kt                 // ★ Foreground Service + MediaSession (백그라운드 재생)
 │   └── PlayerViewModel.kt                 // 서비스에 바인딩 → StateFlow<PlayerUiState> 중계
 └── ui
-    ├── cliplist/ClipListScreen.kt         // (추후) 화면은 나중
-    ├── player/PlayerScreen.kt             // (추후)
+    ├── MainActivity.kt                    // installSplashScreen() + NavHost
+    ├── nav/KikuNavHost.kt                 // cliplist ↔ player/{clipId}
+    ├── cliplist/ClipListScreen.kt
+    ├── player/PlayerScreen.kt             // 골격 먼저, 풍부한 UI는 소리 다음
     └── theme/ (기존)
 ```
+
+> 스플래시는 별도 화면 파일이 아니라 `themes.xml` + `installSplashScreen()`(공식 API)으로 처리한다(§5.0).
 
 > 핵심: **재생 상태와 시퀀서 루프는 UI가 아니라 `PlaybackService`가 소유**한다. Activity/화면이 죽어도 서비스가 살아 소리를 계속 낸다. UI는 서비스에 붙어 상태를 구경하고 명령만 보낸다(없어도 재생은 돈다).
 
@@ -186,7 +225,8 @@ com.bradlab.kiku
 
 | 항목 | 선택 | 이유 |
 |---|---|---|
-| 데이터 저장 | `assets/clips/*.json` + `kotlinx.serialization` | 서버·DB 없음(CLAUDE.md 안티패턴 회피) |
+| 데이터 저장 (MVP) | **A. 번들** `assets/clips/*.json` + `kotlinx.serialization` | 서버·DB 없음. 검증 단계엔 재빌드=재배포라 부담 0 |
+| 데이터 로더 | `ClipRepository` **interface**(`AssetClipRepository` 구현) | 나중에 원격(§10)으로 갈 때 구현체만 교체 — 호출부 안 바뀜 |
 | **백그라운드 재생** | **Foreground Service(type `mediaPlayback`) + MediaSession** | 화면 꺼져도 소리 유지. 알림/잠금화면/이어폰 버튼 컨트롤은 덤 |
 | 시퀀서 위치 | **Service 내부**(viewModelScope 아님) | 화면·Activity 수명과 분리해야 백그라운드 생존 |
 | ★ 저장 / 진행도 | **DataStore** (문장 id Set) | Room은 과함. 검증 단계엔 키-값이면 충분 |
@@ -205,18 +245,21 @@ CLAUDE.md의 JSON 구조를 그대로 따른다.
 @Serializable
 data class Clip(
     val id: Int,
-    val category: String,        // "N4 회사생활", "N4 여행" ...
+    val category: String,                       // "N4 회사생활", "N4 여행" ...
     val title: String,
+    val mode: ClipMode = ClipMode.DRILL,        // 콘텐츠 타입 프리셋 (§2.7)
+    val pattern: PlaybackPattern? = null,       // 클립 전체 커스텀 (있으면 mode 덮어씀)
     val sentences: List<Sentence>,
 )
 
 @Serializable
 data class Sentence(
     val id: Int,
+    val speaker: String? = null,                // 대화·청해의 화자("A"/"B"/"점원"…). null=일반 문장
     val jp: String,
     val kr: String,
     val words: List<Word> = emptyList(),
-    val pause: Long = 3000,
+    val patternOverride: PlaybackPattern? = null, // 이 문장만 다르게 (최우선)
 )
 
 @Serializable
@@ -226,8 +269,10 @@ data class Word(
 )
 ```
 
+> `mode`/`pattern`/`patternOverride`/`speaker`는 전부 기본값이 있어, **MVP 첫 데이터(문장 드릴)는 예전처럼 `mode`도 생략하고 문장만 적으면 된다.** 대화/청해를 만들 때만 `mode`와 `speaker`를 채운다.
+
 ```json
-// assets/clips/n4_office.json
+// assets/clips/n4_office.json  — 문장 드릴(mode 생략 = DRILL)
 {
   "id": 1,
   "category": "N4 회사생활",
@@ -238,19 +283,69 @@ data class Word(
         { "jp": "昨日", "kr": "어제" },
         { "jp": "会社", "kr": "회사" },
         { "jp": "休む", "kr": "쉬다" }
-      ],
-      "pause": 3000 }
+      ] }
   ]
 }
 ```
+
+```json
+// assets/clips/n4_shop_dialogue.json  — 대화(화자 A/B, 한 문장씩)
+{
+  "id": 2,
+  "category": "N4 생활회화",
+  "title": "편의점에서",
+  "mode": "DIALOGUE",
+  "sentences": [
+    { "id": 1, "speaker": "店員", "jp": "いらっしゃいませ。", "kr": "어서 오세요." },
+    { "id": 2, "speaker": "客",   "jp": "これ、ください。",   "kr": "이거 주세요." }
+  ]
+}
+```
+
+> 청해(`"mode": "LISTENING"`)는 동일 구조에 문장 수만 많고 화자가 여럿인 형태. 별도 필드 없음.
 
 ---
 
 ## 5. 화면 설계
 
+듣기 전용이라 화면은 **최소 셸**만 둔다(소리 파이프라인이 먼저, 화면은 그 위에 얇게). 셸은 세 개: **스플래시 → 클립 리스트 → 플레이어**.
+
+### 5.0 화면 흐름 & 스플래시
+
+```
+콜드스타트
+  → SplashScreen (키쿠 아이콘)        ← OS가 그림. 별도 Composable/Activity 아님
+  → MainActivity (단일 Activity)
+       → ClipListScreen (시작 지점)
+            └─(클립 탭)→ PlayerScreen(clipId)
+```
+
+| 항목 | 선택 | 이유 |
+|---|---|---|
+| **스플래시** | AndroidX **`core-splashscreen`**(공식 SplashScreen API) | minSdk 26 OK(lib 23+). 콜드스타트에 키쿠 아이콘+배경색을 OS가 자연스럽게 표시 → **이중 스플래시·깜빡임 없음**, 인위적 `delay` 불필요 |
+| 네비게이션 | Navigation-Compose, 목적지 2개(`cliplist`, `player/{clipId}`) | 라우팅 복잡도 거의 없음. 단일 Activity |
+| 스플래시 표시 시간 | 앱 초기화 동안만(기본) | "키쿠 한 번 보여주고 곧장 리스트". 길게 잡지 않음(원하면 짧게 연장 가능) |
+
+> 스플래시는 `themes.xml`의 `windowSplashScreenAnimatedIcon`(키쿠 아이콘) + `windowSplashScreenBackground`(브랜드 배경색)로 설정하고, `MainActivity.onCreate`에서 `installSplashScreen()` 호출. 클립 리스트가 그릴 준비가 되면 자동으로 사라진다.
+
+#### 브랜드 에셋 / 팔레트 (확정)
+
+심볼은 **聞**(きく, "듣다") 흰색 + 골드 **KIKU** 워드마크, 어두운 배경.
+
+| 용도 | 값 |
+|---|---|
+| 배경 `windowSplashScreenBackground` / adaptive icon 배경 | `#0F1115` |
+| 액센트 골드 (KIKU, 재생 하이라이트 등 UI 포인트) | `#F2C14E` |
+| 심볼 흰색 | `#FFFFFF` |
+
+- 원본: `art/master/01-original/foreground-1024.png` (1024², 투명 배경, 흰 聞 + 골드 KIKU) → adaptive icon **전경** 레이어
+- adaptive icon **배경** = 단색 `#0F1115` (이미지 불필요)
+- `preview-circle.png` / `preview-rounded.png` = 마스크 검수용(빌드 미사용). 안전영역 내 — 잘림 없음 확인
+- 적용: Android Studio `New > Image Asset`(Adaptive Icon)로 전경=PNG, 배경=색상 지정 → mipmap 자동 생성. 스플래시 아이콘도 동일 전경 사용.
+
 ### 5.1 ClipListScreen
 - 카테고리별(N4 회사생활 / 여행 / 생활회화) 클립 카드 목록
-- 카드: 제목 + 문장 수 + (선택) 진행도
+- 카드: 제목 + 문장 수 + 타입 배지(드릴/대화/청해) + (선택) 진행도
 
 ### 5.2 PlayerScreen
 ```
@@ -272,7 +367,7 @@ data class Word(
 - `playingSentence` 인덱스로 현재 줄 하이라이트 → 유튜브 대비 **시각 동기화**가 차별점
 - 한국어/단어는 토글 (보기 전에 스스로 해석할 시간 확보)
 
-> **화면은 추후 구성(MVP 후순위).** 이 앱은 듣기 전용이라 1차 조작 수단은 **미디어 알림/잠금화면/이어폰 버튼**(재생·정지·이전/다음 문장)이다. 위 PlayerScreen은 소리 파이프라인이 끝난 뒤 얹는다.
+> **우선순위:** 셸(스플래시→리스트→플레이어 골격)은 MVP에 넣되, 플레이어의 **풍부한 UI(줄 하이라이트·토글·진행 바)는 소리 파이프라인이 동작한 뒤** 얹는다. 듣기 전용이라 1차 조작 수단은 여전히 **미디어 알림/잠금화면/이어폰 버튼**(재생·정지·이전/다음 문장)이고, 화면은 그 위의 보조 수단이다.
 
 ---
 
@@ -322,3 +417,30 @@ data class Word(
    - ② **Foreground Service에서 화면 끈 채 재생** 찔러보기. 이 앱 최대 리스크(백그라운드 TTS)를 가장 먼저 잠재운다.
 2. 통과하면 → `TtsSequencer` + `PlaybackService`(MediaSession) 골격. 화면 없이 알림 컨트롤로 연속 재생/문장 이동 동작 확인.
 3. 병행: GPT로 N4 첫 클립(10~20문장, 단어 일↔한 포함) JSON 생성해 실데이터로 테스트.
+
+---
+
+## 10. 추후 진화 방향 (MVP 이후)
+
+MVP는 의도적으로 단순하게 간다(번들 JSON, 화면 후순위). 검증 후 다음 순서로 확장한다.
+
+### 10.1 콘텐츠 배포 — 번들 → 원격 (가장 중요한 확장)
+
+MVP는 **A. 번들**이라 콘텐츠를 추가하려면 앱을 새로 빌드해야 한다. 본인 검증 단계(혼자 재빌드)엔 부담 없지만, **출시 후 남들에게 콘텐츠를 자주 내보내려면 매번 스토어 심사를 거쳐야 해 치명적**이다. 그래서:
+
+| 단계 | 방식 | 콘텐츠 추가 시 | 비고 |
+|---|---|---|---|
+| MVP | **A. 번들** (`assets`) | 앱 재빌드/재배포 | 검증엔 충분 |
+| 출시 직전~후 | **B. 원격 JSON** | **JSON 파일만 교체** | 앱 그대로 |
+| 안정화 | **C. 하이브리드** | 평소 원격, 첫 실행/오프라인은 번들 캐시 | 가장 견고 |
+
+- **B의 "원격"은 서버가 아니다.** 정적 파일 호스트 한 곳(GitHub raw / Firebase Hosting / Cloudflare R2 / S3)에 JSON 올리고 앱이 URL을 `fetch`하는 수준 → 운영비 ≈ 0, 백엔드 코드 없음. CLAUDE.md 안티패턴(회원가입/결제/실시간 성우/서버 구축)에 안 걸림.
+- **준비:** MVP에서 `ClipRepository`를 **interface**로 둔다(§3). B로 갈 때 `RemoteClipRepository` 구현체만 추가하고 호출부는 그대로. 마이그레이션 비용을 지금 0으로 묶어두는 게 핵심.
+
+### 10.2 인앱 관리자 화면
+
+지금은 콘텐츠를 JSON 직접 작성으로 관리한다(§2.7). 콘텐츠가 쌓이면 앱 안에서 클립/문장/패턴을 편집하는 관리자 UI를 검토. 10.1의 원격 배포와 묶여야 의미 있음(편집 → 원격 반영).
+
+### 10.3 음성 품질 — 내장 TTS → mp3
+
+기기별 TTS 품질 편차가 크면 CLAUDE.md 방식 3(ElevenLabs mp3 사전 생성 → 원격 스토리지)로 교체. 일↔한 언어 전환 레이턴시도 자연 해소. `PlaybackStep`에 `audioUrl`을 더해 TTS/mp3 재생을 분기하면 시퀀서는 그대로 재사용.
