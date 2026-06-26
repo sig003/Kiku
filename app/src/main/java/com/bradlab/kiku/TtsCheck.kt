@@ -103,7 +103,7 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
         }
     }
 }
-11
+
 /**
  * DESIGN.md §2.4 — speak()를 suspend로 감싸 onDone(또는 onError)에서 resume.
  * 본 구현에서 PlaybackStep을 받게 확장된다. 지금은 검증용으로 text+locale만.
