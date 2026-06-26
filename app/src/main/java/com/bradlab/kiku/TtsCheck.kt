@@ -1,8 +1,11 @@
 package com.bradlab.kiku
 
 import android.content.Intent
+import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +38,16 @@ import kotlin.coroutines.resume
 fun TtsCheckScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 백그라운드 재생 알림 표시를 위한 POST_NOTIFICATIONS (API 33+) 런타임 요청
+    val notifPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* 거부돼도 서비스 자체는 동작 — 알림만 안 보임 */ }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     var status by remember { mutableStateOf("TTS 초기화 중…") }
     var jpReady by remember { mutableStateOf(false) }
@@ -100,6 +114,15 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
                     Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
                 )
             }) { Text("TTS 음성 데이터 설치") }
+        }
+
+        // §2.6 백그라운드 재생 검증 — 시작 후 화면 잠그고 소리 이어지는지 확인
+        Text("─ 백그라운드 재생 검증 ─")
+        Button(onClick = { PlaybackService.start(context) }) {
+            Text("백그라운드 재생 시작")
+        }
+        Button(onClick = { PlaybackService.stop(context) }) {
+            Text("백그라운드 재생 정지")
         }
     }
 }
