@@ -4,8 +4,12 @@ import android.content.Intent
 import android.os.Build
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -52,6 +56,7 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
     var status by remember { mutableStateOf("TTS 초기화 중…") }
     var jpReady by remember { mutableStateOf(false) }
     var krReady by remember { mutableStateOf(false) }
+    var voiceDump by remember { mutableStateOf("") }
 
     // TTS 인스턴스를 컴포지션 수명에 묶고, 떠날 때 정리.
     val tts = remember {
@@ -66,6 +71,8 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
                     append("일본어 ${if (jpReady) "있음" else "없음"} / ")
                     append("한국어 ${if (krReady) "있음" else "없음"}")
                 }
+                // 시작 시 일본어 목소리 목록을 Logcat에 자동 덤프 (태그: KikuVoices)
+                voiceDump = describeJapaneseVoices(e, logToLogcat = true)
             } else {
                 status = "TTS 초기화 실패 (status=$initStatus)"
             }
@@ -81,7 +88,7 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(status)
@@ -123,6 +130,42 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
         }
         Button(onClick = { PlaybackService.stop(context) }) {
             Text("백그라운드 재생 정지")
+        }
+
+        // 일본어 목소리 목록 — 기기에 실제로 깔린 목소리가 몇 개/뭔지 확인
+        Text("─ 일본어 목소리 ─")
+        Button(onClick = { voiceDump = describeJapaneseVoices(tts, logToLogcat = true) }) {
+            Text("일본어 목소리 목록")
+        }
+        if (voiceDump.isNotEmpty()) Text(voiceDump)
+    }
+}
+
+/**
+ * 기기에 설치된 일본어(`ja`) 목소리를 사람이 읽을 수 있는 문자열로 정리한다.
+ * 각 Voice: 이름 / 품질(QUALITY_*, 100~500) / 네트워크 필요 여부.
+ * @param logToLogcat true면 태그 "KikuVoices"로도 출력 — adb logcat으로 확인 가능.
+ */
+private fun describeJapaneseVoices(tts: TextToSpeech, logToLogcat: Boolean): String {
+    val voices: List<Voice> = try {
+        tts.voices?.filter { it.locale.language == Locale.JAPANESE.language }
+            ?.sortedBy { it.name } ?: emptyList()
+    } catch (e: Exception) {
+        if (logToLogcat) Log.w("KikuVoices", "voices 조회 실패", e)
+        return "목소리 목록을 가져오지 못함 (${e.message})"
+    }
+    if (logToLogcat) Log.i("KikuVoices", "일본어 목소리 ${voices.size}개")
+    return buildString {
+        append("일본어 목소리 ${voices.size}개\n")
+        voices.forEach { v ->
+            val net = if (v.isNetworkConnectionRequired) "네트워크" else "오프라인"
+            append("• ${v.name}  (품질 ${v.quality}, $net)\n")
+            if (logToLogcat) {
+                Log.i(
+                    "KikuVoices",
+                    "${v.name} | quality=${v.quality} | network=${v.isNetworkConnectionRequired} | features=${v.features}",
+                )
+            }
         }
     }
 }
