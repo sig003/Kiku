@@ -16,8 +16,9 @@
   모델에 `@Serializable` + kotlinx.serialization 의존성/플러그인 추가. `ClipRepository` interface + `AssetClipRepository`(assets/clips/*.json 파싱·캐시). 화면이 JSON 첫 클립 로드(폴백=샘플). `n4_office.json`(4문장) 샘플로 검증.
   덤: 문장 내 쉼표(、，,)에서 끊어 읽고 짧은 무음 삽입(speakAndAwait).
   *남은 것:* N4 실문장 10~20개로 채우기(콘텐츠 — TODO 8과 맞물림), 여러 클립 목록은 TODO 5.
-- [ ] **4. PlaybackService 본구현** — §2.6
-  검증용 서비스에 `TtsSequencer` 얹기 + MediaSession(알림/잠금화면/이어폰 → 재생·정지·이전/다음) + AudioFocus(전화·타앱 소리 시 일시정지·복귀, AUDIO_BECOMING_NOISY). UI는 서비스 바인딩해 StateFlow 구독.
+- [x] **4. PlaybackService 본구현** — §2.6 — *완료(2026-07-02, 갤럭시 S24+ 검증)*
+  `PlaybackService`가 TtsSequencer+TTS 소유, startForeground(mediaPlayback)+미디어 알림. MediaSession(잠금화면/이어폰 버튼 재생·정지·이전·다음) + AudioFocus(전화·타앱 소리 시 일시정지, AUDIO_BECOMING_NOISY 정지). UI는 서비스 바인딩해 StateFlow 구독+명령. 화면 꺼도/앱 나가도 재생 유지 확인.
+  *남은 것:* AudioFocus GAIN 자동 재개는 생략(수동 재생), 화자→voice 매핑(§2.7)은 콘텐츠 붙일 때.
 - [ ] **5. UI 화면 — ClipList / Player** — §5
   `TtsCheckScreen`을 실제 화면으로 교체. 카테고리별 클립 목록 + 재생 화면(현재 문장 하이라이트, 한/단어 토글, 진행바, 이전/다시듣기/다음, 속도, ★저장). NavHost로 cliplist ↔ player/{clipId}.
 

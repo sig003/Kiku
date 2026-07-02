@@ -1,7 +1,11 @@
 package com.bradlab.kiku
 
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Build
+import android.os.IBinder
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
@@ -20,8 +24,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,19 +89,27 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
         engine
     }
 
-    // TtsSequencer (TODO 2) — 클립 하나를 설계된 흐름대로 연속 재생. 검증용으로 화면이 구동.
-    val sequencer = remember { TtsSequencer(tts, scope) }
-    val repo = remember { AssetClipRepository(context) }   // TODO 3 — assets JSON 로더
-    LaunchedEffect(Unit) {
-        // assets/clips/*.json 의 첫 클립을 로드. 없으면 하드코딩 샘플로 폴백.
-        val clip = repo.clips().firstOrNull() ?: sampleDrillClip()
-        sequencer.load(clip)
+    // 재생은 PlaybackService(Foreground)가 소유 — 화면이 죽어도 생존(§2.6, TODO 4).
+    // 화면은 서비스에 바인딩해 상태만 구독하고 명령만 보낸다.
+    var service by remember { mutableStateOf<PlaybackService?>(null) }
+    DisposableEffect(Unit) {
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, b: IBinder?) {
+                service = (b as PlaybackService.LocalBinder).service()
+            }
+            override fun onServiceDisconnected(name: ComponentName?) { service = null }
+        }
+        context.bindService(Intent(context, PlaybackService::class.java), conn, Context.BIND_AUTO_CREATE)
+        onDispose { context.unbindService(conn) }
     }
-    val ui by sequencer.state.collectAsState()
+    val ui by produceState(initialValue = PlayerUiState(), key1 = service) {
+        val s = service
+        if (s == null) value = PlayerUiState() else s.state.collect { value = it }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
-            sequencer.release()
+            // 화면 전용 TTS(단발 재생/목소리 비교)만 정리. 재생 TTS는 서비스 소유라 안 건드림.
             tts.stop()
             tts.shutdown()
         }
@@ -117,16 +129,16 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
                 (if (ui.finished) " · (끝)" else if (ui.playing) " · 재생중" else " · 정지")
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { sequencer.prev() }) { Text("◀ 이전") }
-            Button(onClick = { sequencer.replay() }) { Text("↻ 다시") }
-            Button(onClick = { sequencer.next() }) { Text("다음 ▶") }
+            Button(onClick = { service?.prev() }) { Text("◀ 이전") }
+            Button(onClick = { service?.replay() }) { Text("↻ 다시") }
+            Button(onClick = { service?.next() }) { Text("다음 ▶") }
         }
-        Button(onClick = { sequencer.playPause() }) {
+        Button(onClick = { service?.playPause() }) {
             Text(if (ui.playing) "⏸ 일시정지" else "▶ 재생")
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(0.8f, 1.0f, 1.2f).forEach { s ->
-                Button(onClick = { sequencer.setSpeed(s) }) {
+                Button(onClick = { service?.setSpeed(s) }) {
                     Text(if (s == ui.speed) "[$s]" else "$s")
                 }
             }
@@ -161,15 +173,6 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
                     Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)
                 )
             }) { Text("TTS 음성 데이터 설치") }
-        }
-
-        // §2.6 백그라운드 재생 검증 — 시작 후 화면 잠그고 소리 이어지는지 확인
-        Text("─ 백그라운드 재생 검증 ─")
-        Button(onClick = { PlaybackService.start(context) }) {
-            Text("백그라운드 재생 시작")
-        }
-        Button(onClick = { PlaybackService.stop(context) }) {
-            Text("백그라운드 재생 정지")
         }
 
         // 일본어 목소리 비교 (TODO 1) — 같은 문장을 목소리별로 재생해 귀로 비교
