@@ -182,6 +182,8 @@ PlaybackService (Foreground, type=mediaPlayback)
 
 **핵심:** 이 셋은 **새 엔진이 아니라 재생 패턴 프리셋**일 뿐이다. 평탄화·시퀀서·백그라운드는 그대로고, 달라지는 건 ① 문장에 화자가 붙느냐, ② 한 문장을 어떻게 펼치냐(`PlaybackPattern`)뿐이다.
 
+> **구현 상태(2026-07-02):** DRILL은 구현·검증 완료. **DIALOGUE(한 문장씩 주고받기)·LISTENING(실전 청해 멀티턴)은 콘텐츠 + 화자→voice 매핑 작업으로 예정**(TODO 9·10). 엔진·서비스·UI는 그대로 재사용하고, 문장에 `speaker`를 채우고 `mode`만 지정하면 된다. 난이도는 N4에 더해 **N3 확장 예정**(TODO 11, `Clip.level`).
+
 > **화자→voice 매핑(DIALOGUE):** 문장의 `speaker`에 따라 다른 TTS voice로 읽어 화자를 구분한다. 내장 TTS에 남·여 일본어 voice가 있어 성별 기준 구분이 가능함을 실기기로 확인(§7.3). 특정 voice 이름 하드코딩은 기기 편차로 깨지므로, **성별/역할로 후보 voice를 조회해 매핑하고 없으면 기본 voice로 폴백.** 구체 구현은 TtsSequencer(TODO 2)에서.
 
 ```kotlin
@@ -260,7 +262,8 @@ CLAUDE.md의 JSON 구조를 그대로 따른다.
 @Serializable
 data class Clip(
     val id: Int,
-    val category: String,                       // "N4 회사생활", "N4 여행" ...
+    val level: String = "N4",                   // 난이도 "N5"/"N4"/"N3" — 목록 배지·필터용 (추후, TODO 11)
+    val category: String,                       // "회사생활", "여행" ...
     val title: String,
     val mode: ClipMode = ClipMode.DRILL,        // 콘텐츠 타입 프리셋 (§2.7)
     val pattern: PlaybackPattern? = null,       // 클립 전체 커스텀 (있으면 mode 덮어씀)
