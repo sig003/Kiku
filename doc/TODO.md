@@ -5,10 +5,13 @@
 
 ## 구현
 
-- [ ] **1. 일본어 목소리 4종 청취 비교**
-  검증 화면 재생 버튼에 voice 순환(htm/jab/jac/jad) + pitch 실험. 남/여·음색 차이를 귀로 비교해 MVP에 내장 TTS 4종으로 충분한지(대화 모드 배역 분리) 판단.
-- [ ] **2. TtsSequencer 구현** — DESIGN.md §2.3~2.5
-  문장을 `PlaybackStep`(JP/KR/WORD_JP/WORD_KR)으로 평탄화, 클립 전체를 하나의 steps 리스트로 펼쳐 연속 재생. 연속재생/문장이동/다시듣기/속도/쉐도잉을 인덱스 점프+파라미터 변경으로. `speakAndAwait` 재사용.
+- [x] **1. 일본어 목소리 청취 비교** — *완료(2026-06-26, 갤럭시 S24+)*
+  검증 화면에 목소리별 재생 버튼 + 피치(0.8/1.0/1.2) 추가해 귀로 비교.
+  **결론:** 피치 0.8/1.2 부자연 → **1.0 고정**. 일본어 **남·여 voice 둘 다 존재** → **대화 배역 구분을 내장 TTS로 커버 가능**, ElevenLabs는 MVP 밖. 화자→voice 매핑은 성별/역할 조회 방식(하드코딩 X). → DESIGN §7.3, §2.7 반영.
+- [x] **2. TtsSequencer 구현** — DESIGN.md §2.3~2.5 — *완료(2026-06-26, 화면 구동 검증)*
+  `Playback.kt`(모델+스텝 평탄화+샘플) + `TtsSequencer.kt`(코루틴 루프 + StateFlow + 재생/일시정지/이전·다음·다시듣기/속도). `speakAndAwait` 재사용.
+  DRILL 흐름: **JP×3 → KR → JP×1 → 단어**, 정지값 실측 확정(회차1.5s·해석3s·KR뒤0.8s·문장사이2s), 클립 끝 종료안내(일→한). 실기기에서 연속재생·문장이동·속도 동작 확인.
+  *남은 것:* 화자→voice 매핑(§2.7), 쉐도잉, 백그라운드 이식은 TODO 4에서.
 - [ ] **3. 데이터 모델 + assets JSON 로더** — §4, §2.7
   `Clip`/`Sentence`/`Word`(@Serializable) + `ClipMode`/`PlaybackPattern`. `ClipRepository` interface + `AssetClipRepository`. kotlinx.serialization 의존성 추가. N4 첫 클립(10~20문장) JSON으로 실데이터 테스트.
 - [ ] **4. PlaybackService 본구현** — §2.6

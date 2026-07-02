@@ -73,19 +73,27 @@ data class PlaybackStep(
 )
 
 // 한 문장 → 스텝 펼침. 펼치는 방식은 PlaybackPattern(§2.7)이 결정한다.
+// DRILL 흐름: JP×3 → (해석) → KR → JP×1(뜻 알고 다시) → 단어(일→한)
 fun Sentence.toSteps(index: Int, p: PlaybackPattern): List<PlaybackStep> = buildList {
-    repeat(maxOf(0, p.jpRepeat - 1)) { add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE)) }
-    add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = p.pauseAfterJpMs)) // 마지막 회차 뒤 정지
-    if (p.readKr) add(PlaybackStep(index, StepKind.KR, kr, Locale.KOREAN))
+    repeat(maxOf(0, p.jpRepeat - 1)) {                                     // 회차 사이 정지
+        add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = p.pauseBetweenRepeatsMs))
+    }
+    if (p.jpRepeat >= 1) add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = p.pauseAfterJpMs)) // 마지막 회차 뒤 해석 시간
+    if (p.readKr) add(PlaybackStep(index, StepKind.KR, kr, Locale.KOREAN, pauseAfterMs = p.pauseAfterKrMs))
+    repeat(maxOf(0, p.jpRepeatAfterKr)) {                                  // 뜻 들은 뒤 다시 듣는 일본어
+        add(PlaybackStep(index, StepKind.JP, jp, Locale.JAPANESE, pauseAfterMs = p.pauseBetweenRepeatsMs))
+    }
     if (p.readWords) words.forEach { w ->                                  // 단어마다 일→한 한 쌍
         add(PlaybackStep(index, StepKind.WORD_JP, w.jp, Locale.JAPANESE))
         add(PlaybackStep(index, StepKind.WORD_KR, w.kr, Locale.KOREAN))
     }
 }
 
-// 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 100문장도 끊김 없이 연속 재생
+// 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 100문장도 끊김 없이 연속 재생.
+// 문장 사이 정지(pauseBetweenSentencesMs)는 각 문장 마지막 스텝에 얹고,
+// 맨 끝에 클립 종료 안내(일본어 → 한국어 "듣기가 끝났습니다")를 덧붙인다.
 fun Clip.toSteps(): List<PlaybackStep> =
-    sentences.flatMapIndexed { i, s -> s.toSteps(i, s.patternOverride ?: effectivePattern) }
+    sentences.flatMapIndexed { i, s -> s.toSteps(i, s.patternOverride ?: effectivePattern) } + outroSteps()
 ```
 
 > 클립의 모든 문장을 **하나의 평탄한 `steps` 리스트**로 펼치는 게 핵심. 시퀀서 루프는 이 리스트를 처음부터 끝까지 순회하므로 **연속 재생은 기본 동작**이고, **문장 이동은 인덱스 점프**(§2.5 표)로 환원된다.
@@ -166,11 +174,15 @@ PlaybackService (Foreground, type=mediaPlayback)
 
 | 타입(`ClipMode`) | 화자 | 한 문장 펼침(기본 패턴) | 성격 |
 |---|---|---|---|
-| **DRILL** 문장 드릴 (현재) | 없음 | JP×3 → 3초 → KR → 단어(일↔한) | 한 문장 깊게 반복 |
+| **DRILL** 문장 드릴 (현재) | 없음 | JP×3 → 3초 → KR → JP×1 → 단어(일↔한) | 한 문장 깊게 반복 |
 | **DIALOGUE** 대화(한 문장씩) | A/B 등 | JP×2 → KR → 짧은 정지, 단어 생략 | 턴 주고받으며 학습 |
 | **LISTENING** 청해(멀티턴) | 여럿 | JP×1, KR·단어 생략, 자연스럽게 쭉 | 실전처럼 흐름 듣기 |
 
+> **정지(pause) 값(DRILL 실측 확정, 2026-06-26):** JP 회차 사이 1.5초 · JP 3회 뒤(해석) 3초 · KR 뒤 0.8초 · 문장 사이 2초. 클립 끝엔 종료 안내(일→한). 값은 전부 `PlaybackPattern`이라 추후 사용자 설정/문장별 오버라이드 가능.
+
 **핵심:** 이 셋은 **새 엔진이 아니라 재생 패턴 프리셋**일 뿐이다. 평탄화·시퀀서·백그라운드는 그대로고, 달라지는 건 ① 문장에 화자가 붙느냐, ② 한 문장을 어떻게 펼치냐(`PlaybackPattern`)뿐이다.
+
+> **화자→voice 매핑(DIALOGUE):** 문장의 `speaker`에 따라 다른 TTS voice로 읽어 화자를 구분한다. 내장 TTS에 남·여 일본어 voice가 있어 성별 기준 구분이 가능함을 실기기로 확인(§7.3). 특정 voice 이름 하드코딩은 기기 편차로 깨지므로, **성별/역할로 후보 voice를 조회해 매핑하고 없으면 기본 voice로 폴백.** 구체 구현은 TtsSequencer(TODO 2)에서.
 
 ```kotlin
 enum class ClipMode { DRILL, DIALOGUE, LISTENING }  // 프리셋 → PlaybackPattern으로 변환
@@ -178,17 +190,20 @@ enum class ClipMode { DRILL, DIALOGUE, LISTENING }  // 프리셋 → PlaybackPat
 @Serializable
 data class PlaybackPattern(            // ← "마음대로 설정"의 실체
     val jpRepeat: Int = 3,
-    val pauseAfterJpMs: Long = 3000,
+    val pauseBetweenRepeatsMs: Long = 1500,  // JP 회차 사이(곱씹을 시간)
+    val pauseAfterJpMs: Long = 3000,         // 마지막 JP 회차 뒤(해석할 시간)
     val readKr: Boolean = true,
+    val pauseAfterKrMs: Long = 800,          // 한국어 뒤
+    val jpRepeatAfterKr: Int = 1,            // 뜻 들은 뒤 다시 듣는 일본어 횟수
     val readWords: Boolean = true,
-    val pauseBetweenSentencesMs: Long = 0,
+    val pauseBetweenSentencesMs: Long = 0,   // 문장(챕터) 사이
 )
 
 // 프리셋 → 기본 패턴
 fun ClipMode.toPattern(): PlaybackPattern = when (this) {
-    ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseAfterJpMs = 3000, readKr = true,  readWords = true)
-    ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 2, pauseAfterJpMs = 1500, readKr = true,  readWords = false)
-    ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseAfterJpMs = 0,    readKr = false, readWords = false)
+    ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseAfterJpMs = 3000, jpRepeatAfterKr = 1, pauseBetweenSentencesMs = 2000, readKr = true,  readWords = true)
+    ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 2, pauseAfterJpMs = 1500, jpRepeatAfterKr = 0, pauseBetweenSentencesMs = 1000, readKr = true,  readWords = false)
+    ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseAfterJpMs = 0,    jpRepeatAfterKr = 0, pauseBetweenSentencesMs = 800,  readKr = false, readWords = false)
 }
 
 // 클립이 실제로 쓰는 패턴: 커스텀 pattern이 있으면 그것, 없으면 mode 프리셋
@@ -395,6 +410,18 @@ data class Word(
 - 일본어 **또는 한국어** 음성 데이터 없는 기기가 꽤 있음(특히 일본어).
 - 첫 실행 시 `isLanguageAvailable(Locale.JAPANESE)`, `isLanguageAvailable(Locale.KOREAN)` **둘 다** 체크 → 없으면 음성 설치 인텐트(`ACTION_INSTALL_TTS_DATA`) 안내.
 - **빠지면 "소리 안 나요" 리뷰 폭탄.** MVP에 반드시 포함.
+
+### 7.3 목소리 / 피치 — 내장 TTS로 대화 화자 구분 가능 (검증됨, 2026-06-26)
+
+갤럭시 S24+ 실기기에서 일본어 목소리를 목소리별로 재생해 귀로 비교한 결과(TODO 1):
+
+- **피치 조절은 폐기.** `0.8`/`1.2`는 부자연스럽게 들림 → **피치 1.0 고정.** 피치로 성별/배역을 흉내내지 않는다.
+- **일본어 남·여 voice가 둘 다 존재.** → **대화(DIALOGUE) 모드의 화자 구분을 내장 TTS만으로 커버 가능.** (예: A=남성 voice, B=여성 voice)
+- 따라서 **ElevenLabs mp3(§10.3)는 MVP 범위 밖.** 품질/자연스러움 불만이 실제로 생기면 그때 검토.
+
+**결정:** 화자→voice 매핑을 둔다(§2.7). 배역이 성별로 갈리면 남/여 voice, 동성 배역이 늘면 음색 다른 동성 voice를 배정. 매핑의 구체 위치·기본값은 `TtsSequencer` 구현(TODO 2) 때 확정.
+
+> **주의(기기 편차):** voice 구성은 **기기·TTS 엔진마다 다르다.** 특정 남성 voice 이름을 하드코딩하면 다른 기기에서 깨진다 → **성별/역할 기준으로 후보 voice를 조회해 매핑**하고, 없으면 기본 voice로 폴백한다.
 
 ---
 
