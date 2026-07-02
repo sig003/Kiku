@@ -1,6 +1,7 @@
 package com.bradlab.kiku
 
 import android.speech.tts.TextToSpeech
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -24,27 +25,33 @@ class TtsSequencer(
     private val tts: TextToSpeech,
     private val scope: CoroutineScope,
 ) {
+    private var clip: Clip? = null
     private var steps: List<PlaybackStep> = emptyList()
     private var totalSentences = 0
     private var currentStepIndex = 0
     private var speed = 1.0f
     private var playJob: Job? = null
+    // 엔진에 실제로 적용된 값 — 바뀔 때만 재설정해 이음새를 매끄럽게(발화마다 재설정 금지)
+    private var appliedRate = -1f
+    private var appliedLocale: Locale? = null
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
     /** 클립을 적재하고 맨 앞으로 리셋. 재생은 하지 않는다. */
     fun load(clip: Clip) {
+        this.clip = clip
         playJob?.cancel()
         tts.stop()
         steps = clip.toSteps()
         totalSentences = clip.sentences.size
         currentStepIndex = 0
         _state.value = PlayerUiState(
+            clipId = clip.id,
             title = "${clip.category} — ${clip.title}",
             totalSentences = totalSentences,
             speed = speed,
-        )
+        ).withSentence(0)
     }
 
     fun playPause() {
@@ -58,9 +65,10 @@ class TtsSequencer(
             _state.update { it.copy(playing = true, finished = false) }
             while (currentStepIndex < steps.size) {
                 val step = steps[currentStepIndex]
-                _state.update { it.copy(sentenceIndex = step.sentenceIndex, kind = step.kind) }
-                tts.setSpeechRate(speed)                 // 매 스텝 속도 반영 → 다음 스텝부터 적용
-                tts.speakAndAwait(step.text, step.locale) // onDone까지 대기 (§2.4)
+                _state.update { it.withSentence(step.sentenceIndex).copy(kind = step.kind) }
+                if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }        // 속도 바뀔 때만
+                if (step.locale != appliedLocale) { tts.language = step.locale; appliedLocale = step.locale } // 언어 바뀔 때만
+                tts.speakAndAwait(step.text)             // onDone까지 대기 (§2.4)
                 if (step.pauseAfterMs > 0) delay(step.pauseAfterMs)
                 currentStepIndex++
             }
@@ -104,20 +112,35 @@ class TtsSequencer(
         playJob?.cancel()
         tts.stop()
         currentStepIndex = firstStepIndexOf(target)
-        _state.update { it.copy(sentenceIndex = target, kind = null, finished = false, playing = false) }
+        _state.update { it.withSentence(target).copy(kind = null, finished = false, playing = false) }
         if (wasPlaying) play()
     }
 
     private fun firstStepIndexOf(sentence: Int): Int =
         steps.indexOfFirst { it.sentenceIndex == sentence }.let { if (it < 0) 0 else it }
+
+    /** 상태에 현재 문장 내용(일/한/단어)을 채운다. */
+    private fun PlayerUiState.withSentence(i: Int): PlayerUiState {
+        val s = clip?.sentences?.getOrNull(i)
+        return copy(
+            sentenceIndex = i,
+            sentenceJp = s?.jp ?: "",
+            sentenceKr = s?.kr ?: "",
+            words = s?.words ?: emptyList(),
+        )
+    }
 }
 
 /** 시퀀서가 노출하는 재생 상태 — UI는 이것만 구독해 그린다(§3 단방향). */
 data class PlayerUiState(
+    val clipId: Int = -1,
     val title: String = "",
     val playing: Boolean = false,
     val sentenceIndex: Int = 0,        // 0-based
     val totalSentences: Int = 0,
+    val sentenceJp: String = "",       // 현재 문장 일본어
+    val sentenceKr: String = "",       // 현재 문장 한국어
+    val words: List<Word> = emptyList(), // 현재 문장 단어
     val kind: StepKind? = null,        // 지금 읽는 스텝 종류(JP/KR/단어)
     val speed: Float = 1.0f,
     val finished: Boolean = false,

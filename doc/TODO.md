@@ -19,8 +19,11 @@
 - [x] **4. PlaybackService 본구현** — §2.6 — *완료(2026-07-02, 갤럭시 S24+ 검증)*
   `PlaybackService`가 TtsSequencer+TTS 소유, startForeground(mediaPlayback)+미디어 알림. MediaSession(잠금화면/이어폰 버튼 재생·정지·이전·다음) + AudioFocus(전화·타앱 소리 시 일시정지, AUDIO_BECOMING_NOISY 정지). UI는 서비스 바인딩해 StateFlow 구독+명령. 화면 꺼도/앱 나가도 재생 유지 확인.
   *남은 것:* AudioFocus GAIN 자동 재개는 생략(수동 재생), 화자→voice 매핑(§2.7)은 콘텐츠 붙일 때.
-- [ ] **5. UI 화면 — ClipList / Player** — §5
-  `TtsCheckScreen`을 실제 화면으로 교체. 카테고리별 클립 목록 + 재생 화면(현재 문장 하이라이트, 한/단어 토글, 진행바, 이전/다시듣기/다음, 속도, ★저장). NavHost로 cliplist ↔ player/{clipId}.
+- [x] **5. UI 화면 — ClipList / Player** — §5 — *완료(2026-07-02)*
+  `TtsCheckScreen` 삭제 → `ClipListScreen`(클립 카드 목록 + 🔀 전체 랜덤) + `PlayerScreen`(현재 문장 크게·하이라이트, 한국어 토글, 단어 칩, 진행바, 이전/다시/다음, 재생·일시정지, 속도). 2화면이라 상태 전환(무의존성), 서비스 바인딩. speakAndAwait는 TtsExt.kt로 분리.
+  콘텐츠: N4 300문장(회사/여행/생활회화 각 100, 단어 포함) + 랜덤 클립(전체서 30개 무작위).
+  음질: 발화마다 하던 엔진 재설정(rate/pitch/language)을 "바뀔 때만"으로 줄여 이음새 개선.
+  *남은 것:* ★저장(진행도)은 미구현.
 
 ## 문서
 

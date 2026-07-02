@@ -47,6 +47,7 @@ class PlaybackService : Service() {
     private lateinit var sequencer: TtsSequencer
     private lateinit var audioManager: AudioManager
     private lateinit var mediaSession: MediaSession
+    private val repo by lazy { AssetClipRepository(applicationContext) }
     private var focusRequest: AudioFocusRequest? = null
     private var noisyRegistered = false
     private var active = false   // 세션 진행 중(알림 표시 중) 여부
@@ -82,9 +83,17 @@ class PlaybackService : Service() {
         setupMediaSession()
         ensureChannel()
         scope.launch { sequencer.state.collect { render(it) } }
+    }
+
+    /** 특정 클립을 적재(다른 클립일 때만). 화면이 플레이어를 열 때 호출. */
+    fun open(clipId: Int) {
         scope.launch {
             ttsReady.await()
-            val clip = AssetClipRepository(applicationContext).clips().firstOrNull() ?: sampleDrillClip()
+            if (state.value.clipId == clipId) return@launch  // 이미 그 클립(랜덤은 다른 클립서 올 때만 새로 섞임)
+            val clip =
+                if (clipId == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
+                else repo.clip(clipId) ?: return@launch
+            sequencer.pause()
             sequencer.load(clip)
         }
     }

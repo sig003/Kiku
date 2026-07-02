@@ -31,6 +31,11 @@ class AssetClipRepository(
     // 앱 실행 중 assets는 안 바뀌므로 1회 로드 후 캐시.
     private var cache: List<Clip>? = null
 
+    companion object {
+        /** 실제 클립이 아닌 "전체 랜덤" 합성 클립의 id. */
+        const val RANDOM_CLIP_ID = 0
+    }
+
     override suspend fun clips(): List<Clip> {
         cache?.let { return it }
         val names = runCatching { context.assets.list(dir)?.toList() }.getOrNull().orEmpty()
@@ -43,6 +48,21 @@ class AssetClipRepository(
     }
 
     override suspend fun clip(id: Int): Clip? = clips().firstOrNull { it.id == id }
+
+    /** 모든 클립의 문장을 섞어 [count]개만 뽑은 "랜덤" 클립. 열 때마다 새로 섞인다. */
+    suspend fun randomClip(count: Int = 30): Clip {
+        val picked = clips().flatMap { it.sentences }
+            .shuffled()
+            .take(count)
+            .mapIndexed { i, s -> s.copy(id = i + 1) }
+        return Clip(
+            id = RANDOM_CLIP_ID,
+            category = "랜덤",
+            title = "전체 랜덤 ${picked.size}문장",
+            mode = ClipMode.DRILL,
+            sentences = picked,
+        )
+    }
 
     private fun parse(fileName: String): Clip? = try {
         val text = context.assets.open("$dir/$fileName").bufferedReader().use { it.readText() }
