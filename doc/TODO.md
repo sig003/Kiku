@@ -12,8 +12,10 @@
   `Playback.kt`(모델+스텝 평탄화+샘플) + `TtsSequencer.kt`(코루틴 루프 + StateFlow + 재생/일시정지/이전·다음·다시듣기/속도). `speakAndAwait` 재사용.
   DRILL 흐름: **JP×3 → KR → JP×1 → 단어**, 정지값 실측 확정(회차1.5s·해석3s·KR뒤0.8s·문장사이2s), 클립 끝 종료안내(일→한). 실기기에서 연속재생·문장이동·속도 동작 확인.
   *남은 것:* 화자→voice 매핑(§2.7), 쉐도잉, 백그라운드 이식은 TODO 4에서.
-- [ ] **3. 데이터 모델 + assets JSON 로더** — §4, §2.7
-  `Clip`/`Sentence`/`Word`(@Serializable) + `ClipMode`/`PlaybackPattern`. `ClipRepository` interface + `AssetClipRepository`. kotlinx.serialization 의존성 추가. N4 첫 클립(10~20문장) JSON으로 실데이터 테스트.
+- [x] **3. 데이터 모델 + assets JSON 로더** — §4, §2.7 — *구조 완료(2026-06-26)*
+  모델에 `@Serializable` + kotlinx.serialization 의존성/플러그인 추가. `ClipRepository` interface + `AssetClipRepository`(assets/clips/*.json 파싱·캐시). 화면이 JSON 첫 클립 로드(폴백=샘플). `n4_office.json`(4문장) 샘플로 검증.
+  덤: 문장 내 쉼표(、，,)에서 끊어 읽고 짧은 무음 삽입(speakAndAwait).
+  *남은 것:* N4 실문장 10~20개로 채우기(콘텐츠 — TODO 8과 맞물림), 여러 클립 목록은 TODO 5.
 - [ ] **4. PlaybackService 본구현** — §2.6
   검증용 서비스에 `TtsSequencer` 얹기 + MediaSession(알림/잠금화면/이어폰 → 재생·정지·이전/다음) + AudioFocus(전화·타앱 소리 시 일시정지·복귀, AUDIO_BECOMING_NOISY). UI는 서비스 바인딩해 StateFlow 구독.
 - [ ] **5. UI 화면 — ClipList / Player** — §5

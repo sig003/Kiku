@@ -1,5 +1,6 @@
 package com.bradlab.kiku
 
+import kotlinx.serialization.Serializable
 import java.util.Locale
 
 /**
@@ -11,11 +12,13 @@ import java.util.Locale
 
 // ── 콘텐츠 모델 (§4) ──────────────────────────────────────────────
 
+@Serializable
 data class Word(
     val jp: String,   // 会社
     val kr: String,   // 회사
 )
 
+@Serializable
 data class Sentence(
     val id: Int,
     val speaker: String? = null,                  // 대화·청해의 화자. null=일반 문장
@@ -25,6 +28,7 @@ data class Sentence(
     val patternOverride: PlaybackPattern? = null, // 이 문장만 다르게 (최우선)
 )
 
+@Serializable
 data class Clip(
     val id: Int,
     val category: String,
@@ -36,8 +40,10 @@ data class Clip(
 
 // ── 재생 패턴 프리셋 (§2.7) ───────────────────────────────────────
 
+@Serializable
 enum class ClipMode { DRILL, DIALOGUE, LISTENING }
 
+@Serializable
 data class PlaybackPattern(
     val jpRepeat: Int = 3,
     val pauseBetweenRepeatsMs: Long = 1500,  // JP 회차 사이 정지 — 한 번씩 듣고 곱씹을 시간

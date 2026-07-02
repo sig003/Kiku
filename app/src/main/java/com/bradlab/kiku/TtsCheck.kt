@@ -87,7 +87,12 @@ fun TtsCheckScreen(modifier: Modifier = Modifier) {
 
     // TtsSequencer (TODO 2) — 클립 하나를 설계된 흐름대로 연속 재생. 검증용으로 화면이 구동.
     val sequencer = remember { TtsSequencer(tts, scope) }
-    LaunchedEffect(Unit) { sequencer.load(sampleDrillClip()) }
+    val repo = remember { AssetClipRepository(context) }   // TODO 3 — assets JSON 로더
+    LaunchedEffect(Unit) {
+        // assets/clips/*.json 의 첫 클립을 로드. 없으면 하드코딩 샘플로 폴백.
+        val clip = repo.clips().firstOrNull() ?: sampleDrillClip()
+        sequencer.load(clip)
+    }
     val ui by sequencer.state.collectAsState()
 
     DisposableEffect(Unit) {
@@ -239,19 +244,34 @@ private fun describeJapaneseVoices(tts: TextToSpeech, logToLogcat: Boolean): Str
  * DESIGN.md §2.4 — speak()를 suspend로 감싸 onDone(또는 onError)에서 resume.
  * 본 구현에서 PlaybackStep을 받게 확장된다. 지금은 검증용으로 text+locale만.
  */
-suspend fun TextToSpeech.speakAndAwait(text: String, locale: Locale) =
+suspend fun TextToSpeech.speakAndAwait(text: String, locale: Locale, commaPauseMs: Long = 400L) =
     suspendCancellableCoroutine { cont ->
-        val id = text.hashCode().toString()
+        val base = text.hashCode()
+        val finalId = "f$base"
+        // 문장 안 쉼표(、，,)에서 끊어 읽고 그 자리에 짧은 무음을 넣어 호흡을 준다.
+        // (안드로이드 TTS는 엔진에 따라 쉼표를 그냥 이어 읽는 경우가 많음)
+        val parts = text.split(Regex("[、，,]")).map { it.trim() }.filter { it.isNotEmpty() }
         setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {}
-            override fun onDone(utteranceId: String?) { if (cont.isActive) cont.resume(Unit) }
+            override fun onDone(utteranceId: String?) {
+                if (utteranceId == finalId && cont.isActive) cont.resume(Unit)  // 마지막 조각에서만 재개
+            }
             @Deprecated("deprecated in API")
             override fun onError(utteranceId: String?) { if (cont.isActive) cont.resume(Unit) }
             override fun onError(utteranceId: String?, errorCode: Int) { if (cont.isActive) cont.resume(Unit) }
         })
         setPitch(1.0f)   // 목소리 비교로 바뀐 피치가 남지 않게 기본값 복귀
         language = locale
-        speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+        if (parts.size <= 1) {
+            speak(text, TextToSpeech.QUEUE_FLUSH, null, finalId)
+        } else {
+            parts.forEachIndexed { i, part ->
+                val last = i == parts.lastIndex
+                val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                speak(part, mode, null, if (last) finalId else "p$i-$base")
+                if (!last) playSilentUtterance(commaPauseMs, TextToSpeech.QUEUE_ADD, "s$i-$base")
+            }
+        }
         cont.invokeOnCancellation { stop() }
     }
 
