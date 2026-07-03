@@ -133,7 +133,7 @@ private fun HeroRandomCard(onClick: () -> Unit) {
             Text("전체 랜덤", color = KikuColors.text, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "모든 문장에서 무작위로. 열 때마다 새로 섞여요.",
+                "모든 문장 랜덤 듣기",
                 color = KikuColors.textMuted,
                 fontSize = 13.sp,
                 modifier = Modifier.fillMaxWidth(0.8f),
@@ -169,7 +169,7 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("${clip.level} · ${clip.displayCategory()}", color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(clip.title, color = KikuColors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${clip.sentences.size}문장 · 드릴", color = KikuColors.textMuted, fontSize = 12.sp)
+            Text("${clip.sentences.size}문장 · ${clip.mode.description()}", color = KikuColors.textMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.size(8.dp))
         // 재생 원형 아이콘
@@ -181,6 +181,13 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
             Text("▶", color = KikuColors.textMuted, fontSize = 13.sp)
         }
     }
+}
+
+/** 클립 성격 설명 — 카드 서브라인에 표시. */
+private fun ClipMode.description(): String = when (this) {
+    ClipMode.DRILL -> "한 문장 듣기"
+    ClipMode.DIALOGUE -> "대화 듣기"
+    ClipMode.LISTENING -> "청해 듣기"
 }
 
 private val Color3A2E12 = androidx.compose.ui.graphics.Color(0xFF3A2E12)
