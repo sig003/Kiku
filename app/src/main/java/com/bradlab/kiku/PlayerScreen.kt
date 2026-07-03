@@ -85,7 +85,7 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
                     )
                     Text(ui.title.ifEmpty { "재생" }, color = KikuColors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                CircleBtn("🔀", 38.dp, KikuColors.surface, KikuColors.text) { service?.shuffleCurrent() }
+                Spacer(Modifier.width(38.dp))   // 제목 중앙 정렬 균형용(셔플은 아래 컨트롤로 내림)
             }
 
             Spacer(Modifier.height(14.dp))
@@ -137,17 +137,20 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(16.dp))
-            // 컨트롤
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
-                CircleBtn("⏮", 52.dp, KikuColors.surface, KikuColors.text) { service?.prev() }
-                CircleBtn(if (ui.playing) "❚❚" else "▶", 72.dp, KikuColors.gold, KikuColors.bg, big = true) { service?.playPause() }
-                CircleBtn("⏭", 52.dp, KikuColors.surface, KikuColors.text) { service?.next() }
+            // 컨트롤 — 셔플 · 이전 · 재생 · 다음 · 다시듣기 (뮤직플레이어 배열)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).background(KikuColors.surface)
+                        .clickable { service?.shuffleCurrent() },
+                    contentAlignment = Alignment.Center,
+                ) { ShuffleGlyph(KikuColors.gold, Modifier.size(20.dp)) }
+                CircleBtn("⏮", 50.dp, KikuColors.surface, KikuColors.text) { service?.prev() }
+                CircleBtn(if (ui.playing) "❚❚" else "▶", 68.dp, KikuColors.gold, KikuColors.bg, big = true) { service?.playPause() }
+                CircleBtn("⏭", 50.dp, KikuColors.surface, KikuColors.text) { service?.next() }
+                CircleBtn("↻", 44.dp, KikuColors.surface, KikuColors.text) { service?.replay() }
             }
-            Spacer(Modifier.height(8.dp))
-            Text("↻ 다시듣기", color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable { service?.replay() }.padding(4.dp))
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             // 속도 세그먼트
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("속도", color = KikuColors.textMuted, fontSize = 13.sp)

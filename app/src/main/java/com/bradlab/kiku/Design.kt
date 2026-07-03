@@ -1,6 +1,11 @@
 package com.bradlab.kiku
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 
 /** KIKU 디자인 토큰 (design_handoff: 다크 배경 + 골드 액센트, 아이팟/Apple Music 감성). */
 object KikuColors {
@@ -35,3 +40,21 @@ fun clipArt(clip: Clip): ArtSpec {
 
 /** 카테고리 라벨에서 레벨 접두("N4 ") 제거해 표시용 이름만. */
 fun Clip.displayCategory(): String = category.removePrefix("${level} ").ifEmpty { category }
+
+/** 깔끔한 벡터 셔플 아이콘 — 이모지(🔀) 대신 직접 그린다(모노크롬, 색 지정 가능). */
+@Composable
+fun ShuffleGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        val sw = (size.minDimension * 0.09f).coerceAtLeast(2f)
+        fun p(x: Float, y: Float) = Offset(w * x, h * y)
+        // 교차하는 두 대각선
+        drawLine(color, p(0.12f, 0.30f), p(0.70f, 0.70f), sw, cap = StrokeCap.Round)
+        drawLine(color, p(0.12f, 0.70f), p(0.70f, 0.30f), sw, cap = StrokeCap.Round)
+        // 오른쪽 화살촉 2개
+        drawLine(color, p(0.70f, 0.70f), p(0.56f, 0.68f), sw, cap = StrokeCap.Round)
+        drawLine(color, p(0.70f, 0.70f), p(0.68f, 0.55f), sw, cap = StrokeCap.Round)
+        drawLine(color, p(0.70f, 0.30f), p(0.56f, 0.32f), sw, cap = StrokeCap.Round)
+        drawLine(color, p(0.70f, 0.30f), p(0.68f, 0.45f), sw, cap = StrokeCap.Round)
+    }
+}

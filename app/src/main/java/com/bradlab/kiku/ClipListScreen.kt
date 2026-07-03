@@ -96,12 +96,10 @@ private fun HeroRandomCard(onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(20.dp),
     ) {
-        // 우하단 셔플 장식 글리프
-        Text(
-            "🔀",
-            fontSize = 80.sp,
-            color = KikuColors.goldFaint,
-            modifier = Modifier.align(Alignment.BottomEnd),
+        // 우하단 셔플 장식 (그린 아이콘)
+        ShuffleGlyph(
+            KikuColors.goldFaint,
+            modifier = Modifier.align(Alignment.BottomEnd).size(84.dp),
         )
         Column {
             Text("◇ 오늘의 듣기", color = KikuColors.gold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
