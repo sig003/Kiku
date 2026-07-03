@@ -39,7 +39,7 @@ class TtsSequencer(
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
     /** 클립을 적재하고 [startSentence]로 위치 설정(저장된 진행 위치 복원용). 재생은 하지 않는다. */
-    fun load(clip: Clip, startSentence: Int = 0) {
+    fun load(clip: Clip, startSentence: Int = 0, shuffled: Boolean = false) {
         this.clip = clip
         playJob?.cancel()
         tts.stop()
@@ -52,6 +52,7 @@ class TtsSequencer(
             title = "${clip.category} — ${clip.title}",
             totalSentences = totalSentences,
             speed = speed,
+            shuffled = shuffled,
         ).withSentence(start)
     }
 
@@ -154,5 +155,6 @@ data class PlayerUiState(
     val words: List<Word> = emptyList(), // 현재 문장 단어
     val kind: StepKind? = null,        // 지금 읽는 스텝 종류(JP/KR/단어)
     val speed: Float = 1.0f,
+    val shuffled: Boolean = false,     // 무작위 순서 재생 중인지(랜덤/셔플)
     val finished: Boolean = false,
 )

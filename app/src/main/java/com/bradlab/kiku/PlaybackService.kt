@@ -115,25 +115,38 @@ class PlaybackService : Service() {
             val start = if (!currentShuffled && clip.id >= 1) progress.getInt("pos_${clip.id}", 0) else 0
             lastSavedSentence = -1
             sequencer.pause()
-            sequencer.load(clip, start)
+            sequencer.load(clip, start, shuffled = currentShuffled)
         }
     }
 
-    /** 현재 클립을 섞어서 다시 재생(재생화면 🔀). 랜덤 클립이면 다시 뽑는다. */
-    fun shuffleCurrent() {
+    /**
+     * 무작위 순서 재생 토글(재생화면 🔀).
+     * on=true → 현재 클립을 섞어 처음부터. on=false → 원래 순서로 되돌려 처음부터.
+     * (랜덤 클립 id=0은 순서 개념이 없어 off 무시)
+     */
+    fun setShuffle(on: Boolean) {
         val id = state.value.clipId
         if (id < 0) return
         scope.launch {
             ttsReady.await()
-            val base =
-                if (id == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
-                else repo.clip(id) ?: return@launch
-            currentShuffled = true
-            val clip = if (id != AssetClipRepository.RANDOM_CLIP_ID)
-                base.copy(sentences = base.sentences.shuffled()) else base
-            lastSavedSentence = -1
-            sequencer.pause()
-            sequencer.load(clip, 0)
+            if (on) {
+                val base =
+                    if (id == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
+                    else repo.clip(id) ?: return@launch
+                currentShuffled = true
+                val clip = if (id != AssetClipRepository.RANDOM_CLIP_ID)
+                    base.copy(sentences = base.sentences.shuffled()) else base
+                lastSavedSentence = -1
+                sequencer.pause()
+                sequencer.load(clip, 0, shuffled = true)
+            } else {
+                if (id == AssetClipRepository.RANDOM_CLIP_ID) return@launch
+                val clip = repo.clip(id) ?: return@launch
+                currentShuffled = false
+                lastSavedSentence = -1
+                sequencer.pause()
+                sequencer.load(clip, 0, shuffled = false)
+            }
         }
     }
 

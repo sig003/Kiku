@@ -9,7 +9,7 @@
     <color name="white">#FFFFFFFF</color>
 
     <!-- kiku 브랜드 팔레트 -->
-    <color name="kiku_bg">#FF0F1115</color>     <!-- 어두운 배경 (아이콘 배경 / 스플래시 배경) -->
+    <color name="kiku_bg">#FF16181F</color>     <!-- 어두운 배경 (아이콘 배경 / 스플래시 배경) — 앱 배경과 통일 -->
     <color name="kiku_gold">#FFF2C14E</color>   <!-- 골드 액센트 (KIKU / 재생 하이라이트) -->
     <color name="kiku_white">#FFFFFFFF</color>  <!-- 심볼 흰색 (聞) -->
 </resources>

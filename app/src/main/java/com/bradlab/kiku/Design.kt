@@ -32,7 +32,7 @@ fun clipArt(clip: Clip): ArtSpec {
     val c = clip.category
     return when {
         "회사" in c -> ArtSpec("会社", listOf(Color(0xFF2B3A67), Color(0xFF16213E)))  // 회사생활
-        "여행" in c -> ArtSpec("旅", listOf(Color(0xFF1F5C57), Color(0xFF0E2E2B)))
+        "여행" in c -> ArtSpec("旅行", listOf(Color(0xFF1F5C57), Color(0xFF0E2E2B)))
         "회화" in c -> ArtSpec("会話", listOf(Color(0xFF6B3F1E), Color(0xFF331C0C)))  // 생활회화
         else -> ArtSpec("会社", listOf(Color(0xFF2B3A67), Color(0xFF16213E)))
     }

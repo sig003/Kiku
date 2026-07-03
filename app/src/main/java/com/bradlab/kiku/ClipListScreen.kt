@@ -21,7 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +42,8 @@ fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
     val clips by produceState(initialValue = emptyList<Clip>()) {
         value = AssetClipRepository(context).clips()
     }
+    var filter by remember { mutableStateOf("전체") }   // 전체 / N4 / N3
+    val shown = clips.filter { filter == "전체" || it.level == filter }
 
     Column(
         modifier = Modifier
@@ -51,20 +56,37 @@ fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
         BrandBar()
         Spacer(Modifier.height(20.dp))
         HeroRandomCard(onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID, false) })
-        Spacer(Modifier.height(22.dp))
-        Text(
-            "컬렉션 · N4",
-            color = KikuColors.textFaint,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
-        )
+        Spacer(Modifier.height(20.dp))
+        LevelFilter(selected = filter, onSelect = { filter = it })
         Spacer(Modifier.height(6.dp))
-        clips.forEachIndexed { i, clip ->
+        if (shown.isEmpty()) {
+            Text(
+                "${filter} 콘텐츠는 준비 중이에요.",
+                color = KikuColors.textMuted, fontSize = 14.sp,
+                modifier = Modifier.padding(vertical = 32.dp),
+            )
+        }
+        shown.forEachIndexed { i, clip ->
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(KikuColors.border))
             CollectionRow(clip, onOpen)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun LevelFilter(selected: String, onSelect: (String) -> Unit) {
+    Row(
+        Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        listOf("전체", "N4", "N3").forEach { lv ->
+            val on = lv == selected
+            Box(
+                Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) KikuColors.gold else KikuColors.surface)
+                    .clickable { onSelect(lv) }.padding(horizontal = 16.dp, vertical = 6.dp),
+            ) { Text(lv, color = if (on) KikuColors.bg else KikuColors.textMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+        }
     }
 }
 
@@ -137,17 +159,11 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
             Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)).background(Brush.verticalGradient(art.colors)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(art.kanji, color = KikuColors.text, fontSize = 24.sp, fontWeight = FontWeight.Black)
-            Text(
-                clip.level,
-                color = KikuColors.textMuted,
-                fontSize = 8.sp,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp),
-            )
+            Text(art.kanji, color = KikuColors.text, fontSize = 22.sp, fontWeight = FontWeight.Black)
         }
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(clip.displayCategory(), color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text("${clip.level} · ${clip.displayCategory()}", color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(clip.title, color = KikuColors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${clip.sentences.size}문장 · 드릴", color = KikuColors.textMuted, fontSize = 12.sp)
         }

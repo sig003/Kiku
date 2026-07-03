@@ -141,9 +141,9 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(
                     Modifier.size(44.dp).clip(CircleShape).background(KikuColors.surface)
-                        .clickable { service?.shuffleCurrent() },
+                        .clickable { service?.setShuffle(!ui.shuffled) },
                     contentAlignment = Alignment.Center,
-                ) { ShuffleGlyph(KikuColors.gold, Modifier.size(20.dp)) }
+                ) { ShuffleGlyph(if (ui.shuffled) KikuColors.gold else KikuColors.textMuted, Modifier.size(20.dp)) }
                 CircleBtn("⏮", 50.dp, KikuColors.surface, KikuColors.text) { service?.prev() }
                 CircleBtn(if (ui.playing) "❚❚" else "▶", 68.dp, KikuColors.gold, KikuColors.bg, big = true) { service?.playPause() }
                 CircleBtn("⏭", 50.dp, KikuColors.surface, KikuColors.text) { service?.next() }
