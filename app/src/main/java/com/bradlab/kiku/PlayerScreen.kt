@@ -160,19 +160,18 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
             }
 
             Spacer(Modifier.height(16.dp))
-            // 속도 세그먼트
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("속도", color = KikuColors.textMuted, fontSize = 13.sp)
-                Row(Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    listOf(0.8f, 1.0f, 1.2f).forEach { s ->
-                        val on = s == ui.speed
-                        Box(
-                            Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) KikuColors.gold else KikuColors.surface)
-                                .clickable { service?.setSpeed(s) }.padding(horizontal = 14.dp, vertical = 6.dp),
-                        ) { Text("$s", color = if (on) KikuColors.bg else KikuColors.textMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
-                    }
+            // 속도 세그먼트 — 중앙 정렬해 가운데(1.0)가 재생 버튼과 같은 중앙선에. 라벨은 아래로.
+            Row(Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                listOf(0.8f, 1.0f, 1.2f).forEach { s ->
+                    val on = s == ui.speed
+                    Box(
+                        Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) KikuColors.gold else KikuColors.surface)
+                            .clickable { service?.setSpeed(s) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    ) { Text("$s", color = if (on) KikuColors.bg else KikuColors.textMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
                 }
             }
+            Spacer(Modifier.height(5.dp))
+            Text("속도", color = KikuColors.textMuted, fontSize = 11.sp)
             Spacer(Modifier.height(12.dp))
         }
     }
