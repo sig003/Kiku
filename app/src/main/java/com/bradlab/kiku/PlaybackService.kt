@@ -119,6 +119,24 @@ class PlaybackService : Service() {
         }
     }
 
+    /** 현재 클립을 섞어서 다시 재생(재생화면 🔀). 랜덤 클립이면 다시 뽑는다. */
+    fun shuffleCurrent() {
+        val id = state.value.clipId
+        if (id < 0) return
+        scope.launch {
+            ttsReady.await()
+            val base =
+                if (id == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
+                else repo.clip(id) ?: return@launch
+            currentShuffled = true
+            val clip = if (id != AssetClipRepository.RANDOM_CLIP_ID)
+                base.copy(sentences = base.sentences.shuffled()) else base
+            lastSavedSentence = -1
+            sequencer.pause()
+            sequencer.load(clip, 0)
+        }
+    }
+
     /** 진행 위치 저장: 순차·실제 클립만. 끝까지 들으면 위치를 지워 다음엔 처음부터(정리). */
     private fun saveProgress(st: PlayerUiState) {
         if (currentShuffled || st.clipId < 1) return

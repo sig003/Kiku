@@ -6,153 +6,210 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-/** 플레이어 화면 (DESIGN.md §5.2). 현재 문장 하이라이트·한국어 토글·진행바·컨트롤. */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+/** 나우플레잉 화면 (design_handoff §2). 디스크 아트 + 문장/뜻/어휘 + 스크러버 + 컨트롤. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
-
-    // 재생은 서비스가 소유(백그라운드 생존). 화면은 바인딩해 상태 구독 + 명령만.
     var service by remember { mutableStateOf<PlaybackService?>(null) }
     DisposableEffectBind(context) { service = it }
-    androidx.compose.runtime.LaunchedEffect(service, clipId, shuffle) { service?.open(clipId, shuffle) }
-
+    LaunchedEffect(service, clipId, shuffle) { service?.open(clipId, shuffle) }
     val ui by produceState(initialValue = PlayerUiState(), key1 = service) {
         val s = service
         if (s == null) value = PlayerUiState() else s.state.collect { value = it }
     }
-
     var showKr by remember { mutableStateOf(true) }
-    BackHandler { onBack() }   // 뒤로가기 = 목록으로. 재생은 서비스라 계속됨.
+    BackHandler { onBack() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(ui.title.ifEmpty { "재생" }, maxLines = 1) },
-                navigationIcon = { TextButton(onClick = onBack) { Text("←") } },
-            )
-        },
-        modifier = Modifier.fillMaxSize(),
-    ) { pad ->
+    val total = ui.totalSentences.coerceAtLeast(1)
+    val progress = (ui.sentenceIndex + 1).toFloat() / total
+
+    Box(
+        Modifier.fillMaxSize().background(Brush.radialGradient(listOf(KikuColors.bgGradTop, KikuColors.bg))),
+    ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(pad).padding(24.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+            Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())
+                .padding(horizontal = 22.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            // 진행 상태
-            val total = ui.totalSentences.coerceAtLeast(1)
-            LinearProgressIndicator(
-                progress = { (ui.sentenceIndex + 1).toFloat() / total },
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "문장 ${ui.sentenceIndex + 1}/${ui.totalSentences}" +
-                    if (ui.finished) " · 끝" else if (ui.playing) " · ▶" else " · ⏸",
-                style = MaterialTheme.typography.labelMedium,
-            )
+            // 상단 바 — 좌: 뒤로 / 중앙: 라벨·제목 / 우: 🔀 셔플(현재 클립 섞어 재생)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                CircleBtn("‹", 38.dp, KikuColors.surface, KikuColors.text, onClick = onBack)
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        if (ui.clipId == AssetClipRepository.RANDOM_CLIP_ID) "RANDOM" else "N4",
+                        color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp,
+                    )
+                    Text(ui.title.ifEmpty { "재생" }, color = KikuColors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                CircleBtn("🔀", 38.dp, KikuColors.surface, KikuColors.text) { service?.shuffleCurrent() }
+            }
 
-            // 현재 문장 (일본어 크게 — 지금 일본어 읽는 중이면 강조)
-            Text(
-                ui.sentenceJp,
-                style = MaterialTheme.typography.headlineSmall,
-                textAlign = TextAlign.Center,
-                color = if (ui.kind == StepKind.JP) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurface,
-            )
+            Spacer(Modifier.height(14.dp))
+            Disc(indexLabel = "${ui.sentenceIndex + 1} / ${ui.totalSentences}")
+            Spacer(Modifier.height(18.dp))
 
-            // 한국어 (토글)
+            // 일본어 문장 (읽는 중 골드)
+            Text(
+                ui.sentenceJp, color = if (ui.kind == StepKind.JP) KikuColors.gold else KikuColors.text,
+                fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 33.sp,
+            )
+            Spacer(Modifier.height(8.dp))
             if (showKr) {
                 Text(
-                    ui.sentenceKr,
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                    color = if (ui.kind == StepKind.KR) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    ui.sentenceKr, color = if (ui.kind == StepKind.KR) KikuColors.gold else KikuColors.textMuted,
+                    fontSize = 15.sp, textAlign = TextAlign.Center,
                 )
+                Spacer(Modifier.height(4.dp))
             }
-            TextButton(onClick = { showKr = !showKr }) {
-                Text(if (showKr) "한국어 숨기기" else "한국어 보기")
-            }
+            Text(
+                if (showKr) "한국어 숨기기" else "한국어 보기",
+                color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { showKr = !showKr }.padding(4.dp),
+            )
 
-            // 단어 칩
+            // 어휘 칩
             if (ui.words.isNotEmpty()) {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Spacer(Modifier.height(10.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ui.words.forEach { w ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
-                            shape = MaterialTheme.shapes.small,
-                        ) {
-                            Text(
-                                "${w.jp} · ${w.kr}",
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        Box(
+                            Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface)
+                                .border(1.dp, KikuColors.border, RoundedCornerShape(999.dp))
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) { Text("${w.jp} · ${w.kr}", color = KikuColors.chipText, fontSize = 12.5.sp) }
                     }
                 }
             }
 
+            Spacer(Modifier.height(16.dp))
+            // 스크러버 (TTS는 초 위치가 없어 문장 진행도로 대체)
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(KikuColors.surface2)) {
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0f, 1f)).height(4.dp).clip(RoundedCornerShape(2.dp)).background(KikuColors.gold))
+            }
+            Spacer(Modifier.height(4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${ui.sentenceIndex + 1}", color = KikuColors.textFaint, fontSize = 11.sp)
+                Text("${ui.totalSentences}", color = KikuColors.textFaint, fontSize = 11.sp)
+            }
+
+            Spacer(Modifier.height(16.dp))
             // 컨트롤
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { service?.prev() }) { Text("◀ 이전") }
-                OutlinedButton(onClick = { service?.replay() }) { Text("↻ 다시") }
-                OutlinedButton(onClick = { service?.next() }) { Text("다음 ▶") }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(26.dp)) {
+                CircleBtn("⏮", 52.dp, KikuColors.surface, KikuColors.text) { service?.prev() }
+                CircleBtn(if (ui.playing) "❚❚" else "▶", 72.dp, KikuColors.gold, KikuColors.bg, big = true) { service?.playPause() }
+                CircleBtn("⏭", 52.dp, KikuColors.surface, KikuColors.text) { service?.next() }
             }
-            Button(onClick = { service?.playPause() }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (ui.playing) "⏸ 일시정지" else "▶ 재생")
-            }
+            Spacer(Modifier.height(8.dp))
+            Text("↻ 다시듣기", color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { service?.replay() }.padding(4.dp))
 
-            // 속도
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("속도")
-                listOf(0.8f, 0.9f, 1.0f, 1.2f).forEach { s ->
-                    FilledTonalButton(onClick = { service?.setSpeed(s) }) {
-                        Text(if (s == ui.speed) "[$s]" else "$s")
+            Spacer(Modifier.height(12.dp))
+            // 속도 세그먼트
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("속도", color = KikuColors.textMuted, fontSize = 13.sp)
+                Row(Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    listOf(0.8f, 1.0f, 1.2f).forEach { s ->
+                        val on = s == ui.speed
+                        Box(
+                            Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) KikuColors.gold else KikuColors.surface)
+                                .clickable { service?.setSpeed(s) }.padding(horizontal = 14.dp, vertical = 6.dp),
+                        ) { Text("$s", color = if (on) KikuColors.bg else KikuColors.textMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
                     }
                 }
             }
+            Spacer(Modifier.height(12.dp))
         }
+    }
+}
+
+@Composable
+private fun Disc(indexLabel: String) {
+    // 바깥 Box(클립 안 함)에 뱃지를 둬서 원형 클립에 잘리지 않게 한다.
+    Box(Modifier.size(196.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier.size(190.dp).clip(CircleShape)
+                .background(Brush.radialGradient(listOf(androidx.compose.ui.graphics.Color(0xFF232A38), androidx.compose.ui.graphics.Color(0xFF0E1118)))),
+            contentAlignment = Alignment.Center,
+        ) {
+            // 동심원 링 3개 (inset 0/22/44)
+            Canvas(Modifier.fillMaxSize()) {
+                listOf(0.dp, 22.dp, 44.dp).forEach { inset ->
+                    val r = (size.minDimension / 2) - inset.toPx()
+                    if (r > 0) drawCircle(
+                        color = KikuColors.gold.copy(alpha = 0.14f), radius = r,
+                        center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2),
+                        style = Stroke(width = 1.dp.toPx()),
+                    )
+                }
+            }
+            Text("聞", color = KikuColors.text, fontSize = 84.sp, fontWeight = FontWeight.Black)
+        }
+        // 우상단 n/총 뱃지 — 클립 밖이라 안 잘림
+        Box(
+            Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(999.dp))
+                .background(KikuColors.surface).padding(horizontal = 8.dp, vertical = 3.dp),
+        ) { Text(indexLabel, color = KikuColors.textMuted, fontSize = 11.sp) }
+    }
+}
+
+@Composable
+private fun CircleBtn(glyph: String, size: androidx.compose.ui.unit.Dp, bg: androidx.compose.ui.graphics.Color, fg: androidx.compose.ui.graphics.Color, big: Boolean = false, onClick: () -> Unit) {
+    Box(
+        Modifier.size(size).clip(CircleShape).background(bg).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(glyph, color = fg, fontSize = if (big) 26.sp else 18.sp, fontWeight = FontWeight.Bold)
     }
 }
 
 /** 서비스 바인딩을 DisposableEffect로 감싼 헬퍼. 화면이 떠날 때 언바인드. */
 @Composable
 private fun DisposableEffectBind(context: Context, onService: (PlaybackService?) -> Unit) {
-    androidx.compose.runtime.DisposableEffect(Unit) {
+    DisposableEffect(Unit) {
         val conn = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, b: IBinder?) {
                 onService((b as PlaybackService.LocalBinder).service())

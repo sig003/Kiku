@@ -31,6 +31,7 @@ data class Sentence(
 @Serializable
 data class Clip(
     val id: Int,
+    val level: String = "N4",                     // 난이도 "N5"/"N4"/"N3" — 목록 배지·필터용
     val category: String,
     val title: String,
     val mode: ClipMode = ClipMode.DRILL,
@@ -56,7 +57,7 @@ data class PlaybackPattern(
 )
 
 fun ClipMode.toPattern(): PlaybackPattern = when (this) {
-    ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 1500, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
+    ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
     ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 2, pauseBetweenRepeatsMs = 1000, pauseAfterJpMs = 1500, readKr = true,  pauseAfterKrMs = 500, jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 1000)
     ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseBetweenRepeatsMs = 0,    pauseAfterJpMs = 0,    readKr = false, pauseAfterKrMs = 0,   jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 800)
 }

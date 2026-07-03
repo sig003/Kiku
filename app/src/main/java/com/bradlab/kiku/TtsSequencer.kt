@@ -29,7 +29,7 @@ class TtsSequencer(
     private var steps: List<PlaybackStep> = emptyList()
     private var totalSentences = 0
     private var currentStepIndex = 0
-    private var speed = 0.9f   // 기본 살짝 느리게(청해 입문)
+    private var speed = 1.0f
     private var playJob: Job? = null
     // 엔진에 실제로 적용된 값 — 바뀔 때만 재설정해 이음새를 매끄럽게(발화마다 재설정 금지)
     private var appliedRate = -1f
@@ -153,6 +153,6 @@ data class PlayerUiState(
     val sentenceKr: String = "",       // 현재 문장 한국어
     val words: List<Word> = emptyList(), // 현재 문장 단어
     val kind: StepKind? = null,        // 지금 읽는 스텝 종류(JP/KR/단어)
-    val speed: Float = 0.9f,
+    val speed: Float = 1.0f,
     val finished: Boolean = false,
 )
