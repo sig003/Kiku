@@ -13,6 +13,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -25,7 +26,7 @@ import androidx.compose.ui.unit.dp
 /** 클립 목록 화면 (DESIGN.md §5.1). 카테고리·제목·문장 수·타입 배지를 카드로. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClipListScreen(onOpen: (Int) -> Unit) {
+fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
     val context = LocalContext.current
     val clips by produceState(initialValue = emptyList<Clip>()) {
         value = AssetClipRepository(context).clips()
@@ -41,19 +42,19 @@ fun ClipListScreen(onOpen: (Int) -> Unit) {
         ) {
             // 전체 랜덤 — 모든 클립 문장을 섞어 무작위로
             item(key = AssetClipRepository.RANDOM_CLIP_ID) {
-                RandomCard(onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID) })
+                RandomCard(onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID, false) })
             }
             items(clips, key = { it.id }) { clip ->
-                ClipCard(clip, onClick = { onOpen(clip.id) })
+                ClipCard(clip, onOpen = onOpen)
             }
         }
     }
 }
 
 @Composable
-private fun ClipCard(clip: Clip, onClick: () -> Unit) {
+private fun ClipCard(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable { onOpen(clip.id, false) },  // 카드 탭 = 순서대로
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(clip.category, style = MaterialTheme.typography.labelMedium)
@@ -62,6 +63,7 @@ private fun ClipCard(clip: Clip, onClick: () -> Unit) {
                 "${clip.sentences.size}문장 · ${clip.mode.badge()}",
                 style = MaterialTheme.typography.bodySmall,
             )
+            TextButton(onClick = { onOpen(clip.id, true) }) { Text("🔀 랜덤 재생") }  // 이 클립만 섞어서
         }
     }
 }

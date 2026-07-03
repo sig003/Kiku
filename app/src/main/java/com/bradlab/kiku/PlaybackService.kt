@@ -21,6 +21,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
+import android.view.KeyEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,9 +49,12 @@ class PlaybackService : Service() {
     private lateinit var audioManager: AudioManager
     private lateinit var mediaSession: MediaSession
     private val repo by lazy { AssetClipRepository(applicationContext) }
+    private val progress by lazy { getSharedPreferences("kiku_progress", MODE_PRIVATE) }
     private var focusRequest: AudioFocusRequest? = null
     private var noisyRegistered = false
     private var active = false   // 세션 진행 중(알림 표시 중) 여부
+    private var currentShuffled = false      // 랜덤/셔플 재생이면 위치 저장 안 함
+    private var lastSavedSentence = -1
 
     private val binder = LocalBinder()
     inner class LocalBinder : Binder() { fun service(): PlaybackService = this@PlaybackService }
@@ -82,19 +86,47 @@ class PlaybackService : Service() {
         sequencer = TtsSequencer(tts, scope)
         setupMediaSession()
         ensureChannel()
-        scope.launch { sequencer.state.collect { render(it) } }
+        scope.launch {
+            sequencer.state.collect { st ->
+                render(st)
+                saveProgress(st)   // 진행 위치 저장(순차·실제 클립만)
+            }
+        }
     }
 
-    /** 특정 클립을 적재(다른 클립일 때만). 화면이 플레이어를 열 때 호출. */
-    fun open(clipId: Int) {
+    /**
+     * 클립을 적재. [shuffle]=true면 그 클립 문장을 섞어서(랜덤 재생).
+     * 순차(비셔플) 재생이면 저장된 진행 위치부터 복원한다.
+     */
+    fun open(clipId: Int, shuffle: Boolean = false) {
         scope.launch {
             ttsReady.await()
-            if (state.value.clipId == clipId) return@launch  // 이미 그 클립(랜덤은 다른 클립서 올 때만 새로 섞임)
-            val clip =
+            // 이미 같은 클립을 순차 재생 중이면 위치 유지(재적재 안 함)
+            if (!shuffle && !currentShuffled && state.value.clipId == clipId) return@launch
+            val base =
                 if (clipId == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
                 else repo.clip(clipId) ?: return@launch
+            currentShuffled = shuffle || clipId == AssetClipRepository.RANDOM_CLIP_ID
+            val clip =
+                if (shuffle && clipId != AssetClipRepository.RANDOM_CLIP_ID)
+                    base.copy(sentences = base.sentences.shuffled())
+                else base
+            // 순차·실제 클립이면 저장된 위치 복원
+            val start = if (!currentShuffled && clip.id >= 1) progress.getInt("pos_${clip.id}", 0) else 0
+            lastSavedSentence = -1
             sequencer.pause()
-            sequencer.load(clip)
+            sequencer.load(clip, start)
+        }
+    }
+
+    /** 진행 위치 저장: 순차·실제 클립만. 끝까지 들으면 위치를 지워 다음엔 처음부터(정리). */
+    private fun saveProgress(st: PlayerUiState) {
+        if (currentShuffled || st.clipId < 1) return
+        if (st.finished) {
+            progress.edit().remove("pos_${st.clipId}").apply()
+        } else if (st.sentenceIndex != lastSavedSentence) {
+            progress.edit().putInt("pos_${st.clipId}", st.sentenceIndex).apply()
+            lastSavedSentence = st.sentenceIndex
         }
     }
 
@@ -197,6 +229,27 @@ class PlaybackService : Service() {
                 override fun onSkipToNext() = next()
                 override fun onSkipToPrevious() = prev()
                 override fun onStop() = stopPlayback()
+
+                // 이어폰/블루투스 하드웨어 버튼 직접 처리 (일부 기기는 위 콜백으로 안 옴)
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
+                    val ev = if (Build.VERSION.SDK_INT >= 33)
+                        mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                    else @Suppress("DEPRECATION")
+                        mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (ev != null && ev.action == KeyEvent.ACTION_DOWN) {
+                        when (ev.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> playPause()
+                            KeyEvent.KEYCODE_MEDIA_PLAY -> play()
+                            KeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
+                            KeyEvent.KEYCODE_MEDIA_NEXT -> next()
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> prev()
+                            KeyEvent.KEYCODE_MEDIA_STOP -> stopPlayback()
+                            else -> return super.onMediaButtonEvent(mediaButtonIntent)
+                        }
+                        return true
+                    }
+                    return super.onMediaButtonEvent(mediaButtonIntent)
+                }
             })
             isActive = true
         }

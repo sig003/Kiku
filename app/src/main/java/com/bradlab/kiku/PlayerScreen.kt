@@ -43,13 +43,13 @@ import androidx.compose.ui.unit.dp
 /** 플레이어 화면 (DESIGN.md §5.2). 현재 문장 하이라이트·한국어 토글·진행바·컨트롤. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun PlayerScreen(clipId: Int, onBack: () -> Unit) {
+fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
     val context = LocalContext.current
 
     // 재생은 서비스가 소유(백그라운드 생존). 화면은 바인딩해 상태 구독 + 명령만.
     var service by remember { mutableStateOf<PlaybackService?>(null) }
     DisposableEffectBind(context) { service = it }
-    androidx.compose.runtime.LaunchedEffect(service, clipId) { service?.open(clipId) }
+    androidx.compose.runtime.LaunchedEffect(service, clipId, shuffle) { service?.open(clipId, shuffle) }
 
     val ui by produceState(initialValue = PlayerUiState(), key1 = service) {
         val s = service
@@ -139,7 +139,7 @@ fun PlayerScreen(clipId: Int, onBack: () -> Unit) {
             // 속도
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("속도")
-                listOf(0.8f, 1.0f, 1.2f).forEach { s ->
+                listOf(0.8f, 0.9f, 1.0f, 1.2f).forEach { s ->
                     FilledTonalButton(onClick = { service?.setSpeed(s) }) {
                         Text(if (s == ui.speed) "[$s]" else "$s")
                     }

@@ -35,11 +35,12 @@ class MainActivity : ComponentActivity() {
 
                 // 2화면 전환(목록 ↔ 플레이어). 목적지가 둘뿐이라 별도 네비 라이브러리 없이 상태로 처리.
                 var openClipId by rememberSaveable { mutableStateOf<Int?>(null) }
+                var openShuffle by rememberSaveable { mutableStateOf(false) }
                 val id = openClipId
                 if (id == null) {
-                    ClipListScreen(onOpen = { openClipId = it })
+                    ClipListScreen(onOpen = { clipId, shuffle -> openClipId = clipId; openShuffle = shuffle })
                 } else {
-                    PlayerScreen(clipId = id, onBack = { openClipId = null })
+                    PlayerScreen(clipId = id, shuffle = openShuffle, onBack = { openClipId = null })
                 }
             }
         }

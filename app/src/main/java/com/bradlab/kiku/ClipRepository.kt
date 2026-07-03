@@ -50,7 +50,7 @@ class AssetClipRepository(
     override suspend fun clip(id: Int): Clip? = clips().firstOrNull { it.id == id }
 
     /** 모든 클립의 문장을 섞어 [count]개만 뽑은 "랜덤" 클립. 열 때마다 새로 섞인다. */
-    suspend fun randomClip(count: Int = 30): Clip {
+    suspend fun randomClip(count: Int = 100): Clip {
         val picked = clips().flatMap { it.sentences }
             .shuffled()
             .take(count)

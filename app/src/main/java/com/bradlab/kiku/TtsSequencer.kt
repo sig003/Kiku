@@ -29,7 +29,7 @@ class TtsSequencer(
     private var steps: List<PlaybackStep> = emptyList()
     private var totalSentences = 0
     private var currentStepIndex = 0
-    private var speed = 1.0f
+    private var speed = 0.9f   // 기본 살짝 느리게(청해 입문)
     private var playJob: Job? = null
     // 엔진에 실제로 적용된 값 — 바뀔 때만 재설정해 이음새를 매끄럽게(발화마다 재설정 금지)
     private var appliedRate = -1f
@@ -38,20 +38,21 @@ class TtsSequencer(
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
-    /** 클립을 적재하고 맨 앞으로 리셋. 재생은 하지 않는다. */
-    fun load(clip: Clip) {
+    /** 클립을 적재하고 [startSentence]로 위치 설정(저장된 진행 위치 복원용). 재생은 하지 않는다. */
+    fun load(clip: Clip, startSentence: Int = 0) {
         this.clip = clip
         playJob?.cancel()
         tts.stop()
         steps = clip.toSteps()
         totalSentences = clip.sentences.size
-        currentStepIndex = 0
+        val start = startSentence.coerceIn(0, (totalSentences - 1).coerceAtLeast(0))
+        currentStepIndex = firstStepIndexOf(start)
         _state.value = PlayerUiState(
             clipId = clip.id,
             title = "${clip.category} — ${clip.title}",
             totalSentences = totalSentences,
             speed = speed,
-        ).withSentence(0)
+        ).withSentence(start)
     }
 
     fun playPause() {
@@ -68,7 +69,7 @@ class TtsSequencer(
                 _state.update { it.withSentence(step.sentenceIndex).copy(kind = step.kind) }
                 if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }        // 속도 바뀔 때만
                 if (step.locale != appliedLocale) { tts.language = step.locale; appliedLocale = step.locale } // 언어 바뀔 때만
-                tts.speakAndAwait(step.text)             // onDone까지 대기 (§2.4)
+                tts.speakAndAwait(vocalize(step.text, step.locale)) // onDone까지 대기 (§2.4)
                 if (step.pauseAfterMs > 0) delay(step.pauseAfterMs)
                 currentStepIndex++
             }
@@ -119,6 +120,16 @@ class TtsSequencer(
     private fun firstStepIndexOf(sentence: Int): Int =
         steps.indexOfFirst { it.sentenceIndex == sentence }.let { if (it < 0) 0 else it }
 
+    /**
+     * 낭독용 텍스트 변환 — 문법 자리표시 물결표(～) 처리.
+     * 한국어 "～해요" → "무엇무엇 해요"(모국어라 패턴 힌트 자연스러움),
+     * 일본어 "～てください" → "てください"(초보엔 なになに가 오히려 헷갈려 그냥 제거, 화면 칩엔 ～ 보임).
+     */
+    private fun vocalize(text: String, locale: Locale): String {
+        val placeholder = if (locale.language == Locale.KOREAN.language) "무엇무엇 " else ""
+        return text.replace("～", placeholder).replace("~", placeholder)
+    }
+
     /** 상태에 현재 문장 내용(일/한/단어)을 채운다. */
     private fun PlayerUiState.withSentence(i: Int): PlayerUiState {
         val s = clip?.sentences?.getOrNull(i)
@@ -142,6 +153,6 @@ data class PlayerUiState(
     val sentenceKr: String = "",       // 현재 문장 한국어
     val words: List<Word> = emptyList(), // 현재 문장 단어
     val kind: StepKind? = null,        // 지금 읽는 스텝 종류(JP/KR/단어)
-    val speed: Float = 1.0f,
+    val speed: Float = 0.9f,
     val finished: Boolean = false,
 )
