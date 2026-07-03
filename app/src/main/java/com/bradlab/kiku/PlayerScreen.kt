@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -143,7 +145,14 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
                     Modifier.size(44.dp).clip(CircleShape).background(KikuColors.surface)
                         .clickable { service?.setShuffle(!ui.shuffled) },
                     contentAlignment = Alignment.Center,
-                ) { ShuffleGlyph(if (ui.shuffled) KikuColors.gold else KikuColors.textMuted, Modifier.size(20.dp)) }
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_shuffle),
+                        contentDescription = "랜덤",
+                        tint = if (ui.shuffled) KikuColors.gold else KikuColors.textMuted,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
                 CircleBtn("⏮", 50.dp, KikuColors.surface, KikuColors.text) { service?.prev() }
                 CircleBtn(if (ui.playing) "❚❚" else "▶", 68.dp, KikuColors.gold, KikuColors.bg, big = true) { service?.playPause() }
                 CircleBtn("⏭", 50.dp, KikuColors.surface, KikuColors.text) { service?.next() }

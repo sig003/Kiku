@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -118,9 +120,11 @@ private fun HeroRandomCard(onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(20.dp),
     ) {
-        // 우하단 셔플 장식 (그린 아이콘)
-        ShuffleGlyph(
-            KikuColors.goldFaint,
+        // 우하단 셔플 장식
+        Icon(
+            painterResource(R.drawable.ic_shuffle),
+            contentDescription = null,
+            tint = KikuColors.goldFaint,
             modifier = Modifier.align(Alignment.BottomEnd).size(84.dp),
         )
         Column {
