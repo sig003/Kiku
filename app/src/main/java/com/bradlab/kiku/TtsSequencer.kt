@@ -1,6 +1,8 @@
 package com.bradlab.kiku
 
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
+import android.util.Log
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -34,6 +36,11 @@ class TtsSequencer(
     // 엔진에 실제로 적용된 값 — 바뀔 때만 재설정해 이음새를 매끄럽게(발화마다 재설정 금지)
     private var appliedRate = -1f
     private var appliedLocale: Locale? = null
+    private var appliedVoiceName: String? = null
+    // 문장마다 번갈아 쓸 목소리(성별 다양화). 언어별 2개.
+    private var jaVoices: List<Voice> = emptyList()
+    private var koVoices: List<Voice> = emptyList()
+    private var voicesReady = false
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -63,13 +70,14 @@ class TtsSequencer(
     /** 현재 위치부터 연속 재생. 이미 재생 중이면 무시. */
     fun play() {
         if (playJob?.isActive == true || steps.isEmpty()) return
+        ensureVoices()
         playJob = scope.launch {
             _state.update { it.copy(playing = true, finished = false) }
             while (currentStepIndex < steps.size) {
                 val step = steps[currentStepIndex]
                 _state.update { it.withSentence(step.sentenceIndex).copy(kind = step.kind) }
                 if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }        // 속도 바뀔 때만
-                if (step.locale != appliedLocale) { tts.language = step.locale; appliedLocale = step.locale } // 언어 바뀔 때만
+                applyVoice(step)   // 문장 홀짝으로 목소리 번갈아(+언어), 바뀔 때만 재설정
                 tts.speakAndAwait(vocalize(step.text, step.locale)) // onDone까지 대기 (§2.4)
                 if (step.pauseAfterMs > 0) delay(step.pauseAfterMs)
                 currentStepIndex++
@@ -131,6 +139,42 @@ class TtsSequencer(
 
     private fun firstStepIndexOf(sentence: Int): Int =
         steps.indexOfFirst { it.sentenceIndex == sentence }.let { if (it < 0) 0 else it }
+
+    /** 언어별로 "문장마다 번갈아" 쓸 목소리 2개를 한 번만 고른다(성별 다양화). TTS 초기화 후 호출. */
+    private fun ensureVoices() {
+        if (voicesReady) return
+        voicesReady = true
+        val all = try { tts.voices?.toList() ?: emptyList() } catch (e: Exception) { emptyList() }
+        jaVoices = pickAlternatingVoices(all, "ja")
+        koVoices = pickAlternatingVoices(all, "ko")
+        Log.i("KikuVoices", "번갈아 사용 — ja=${jaVoices.map { it.name }} ko=${koVoices.map { it.name }}")
+    }
+
+    /** 오프라인·뚜렷한 화자(-x-, 구형 htm 제외) 중 서로 다른 목소리 2개. 없으면 1개 폴백. */
+    private fun pickAlternatingVoices(all: List<Voice>, lang: String): List<Voice> {
+        val cands = all.filter {
+            it.locale.language == lang && !it.isNetworkConnectionRequired &&
+                it.name.contains("-x-") && !it.name.contains("-htm-")
+        }.sortedBy { it.name }
+        val distinct = cands.distinctBy { it.name.substringBeforeLast("-") } // -local/-network 중복 제거
+        return distinct.take(2).ifEmpty { all.filter { it.locale.language == lang }.take(1) }
+    }
+
+    /** 현재 스텝에 목소리를 적용 — 문장 인덱스 홀짝으로 두 목소리를 번갈아. 바뀔 때만 재설정. */
+    private fun applyVoice(step: PlaybackStep) {
+        val voices = if (step.locale.language == Locale.JAPANESE.language) jaVoices else koVoices
+        if (voices.isNotEmpty()) {
+            val v = voices[step.sentenceIndex % voices.size]
+            if (v.name != appliedVoiceName) {
+                tts.voice = v
+                appliedVoiceName = v.name
+                appliedLocale = step.locale   // setVoice가 언어도 설정하므로 동기화
+            }
+        } else if (step.locale != appliedLocale) {
+            tts.language = step.locale
+            appliedLocale = step.locale
+        }
+    }
 
     /**
      * 낭독용 텍스트 변환 — 문법 자리표시 물결표(～) 처리.
