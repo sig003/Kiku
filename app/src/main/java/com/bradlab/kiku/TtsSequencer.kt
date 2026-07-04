@@ -96,6 +96,17 @@ class TtsSequencer(
         _state.update { it.copy(speed = value) }
     }
 
+    /** 세션 비우기 — 미니바 닫기(dismiss)용. 재생 중단 + 상태를 기본값으로 되돌려 UI에서 세션이 사라지게. */
+    fun clear() {
+        playJob?.cancel()
+        tts.stop()
+        clip = null
+        steps = emptyList()
+        totalSentences = 0
+        currentStepIndex = 0
+        _state.value = PlayerUiState()
+    }
+
     /** 자원 정리 — 화면/서비스가 사라질 때. tts는 소유자가 닫는다. */
     fun release() {
         playJob?.cancel()

@@ -1,17 +1,51 @@
 package com.bradlab.kiku
 
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
+import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.bradlab.kiku.ui.theme.KikuTheme
 
@@ -32,17 +66,132 @@ class MainActivity : ComponentActivity() {
                         notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
-
-                // 2화면 전환(목록 ↔ 플레이어). 목적지가 둘뿐이라 별도 네비 라이브러리 없이 상태로 처리.
-                var openClipId by rememberSaveable { mutableStateOf<Int?>(null) }
-                var openShuffle by rememberSaveable { mutableStateOf(false) }
-                val id = openClipId
-                if (id == null) {
-                    ClipListScreen(onOpen = { clipId, shuffle -> openClipId = clipId; openShuffle = shuffle })
-                } else {
-                    PlayerScreen(clipId = id, shuffle = openShuffle, onBack = { openClipId = null })
-                }
+                KikuRoot()
             }
         }
+    }
+}
+
+/**
+ * 앱 루트 — 목록 ↔ 플레이어 2화면 전환 + 하단 미니 플레이어.
+ *
+ * 서비스 바인딩을 여기로 올려 [state]를 공유한다. 그래서 플레이어에서 뒤로 나가도(=목록)
+ * 재생 중인 세션이 하단 미니 바로 남고, 탭하면 다시 플레이어로 복귀한다.
+ */
+@Composable
+private fun KikuRoot() {
+    val context = LocalContext.current
+    var service by remember { mutableStateOf<PlaybackService?>(null) }
+    DisposableEffect(Unit) {
+        val conn = object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, b: IBinder?) {
+                service = (b as PlaybackService.LocalBinder).service()
+            }
+            override fun onServiceDisconnected(name: ComponentName?) { service = null }
+        }
+        context.bindService(Intent(context, PlaybackService::class.java), conn, Context.BIND_AUTO_CREATE)
+        onDispose { context.unbindService(conn) }
+    }
+    val ui by produceState(initialValue = PlayerUiState(), key1 = service) {
+        val s = service
+        if (s == null) value = PlayerUiState() else s.state.collect { value = it }
+    }
+
+    // 목적지가 둘뿐이라 별도 네비 라이브러리 없이 상태로 처리.
+    var openClipId by rememberSaveable { mutableStateOf<Int?>(null) }
+    var openShuffle by rememberSaveable { mutableStateOf(false) }
+    var openFresh by rememberSaveable { mutableStateOf(true) } // 새로 열기(재적재) vs 복귀(그대로)
+    var openRandomLevel by rememberSaveable { mutableStateOf<String?>(null) } // 전체 랜덤의 레벨(전체/N4/N3)
+
+    val sessionActive = ui.clipId >= 0 && ui.totalSentences > 0
+    val id = openClipId
+    if (id == null) {
+        Box(Modifier.fillMaxSize()) {
+            ClipListScreen(
+                onOpen = { clipId, shuffle, level ->
+                    openClipId = clipId; openShuffle = shuffle; openRandomLevel = level; openFresh = true
+                },
+                bottomPadding = if (sessionActive) 84.dp else 0.dp,   // 미니 바에 마지막 항목 안 가리게
+            )
+            if (sessionActive) {
+                MiniPlayer(
+                    ui = ui,
+                    onTap = { openClipId = ui.clipId; openShuffle = ui.shuffled; openFresh = false },
+                    onPlayPause = { service?.playPause() },
+                    onClose = { service?.dismiss() },
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+                )
+            }
+        }
+    } else {
+        PlayerScreen(
+            clipId = id, shuffle = openShuffle, fresh = openFresh, randomLevel = openRandomLevel,
+            onBack = { openClipId = null },
+        )
+    }
+}
+
+/** 하단 미니 플레이어 — 목록에서 현재 재생 세션을 보여주고, 탭하면 플레이어로 확장. */
+@Composable
+private fun MiniPlayer(
+    ui: PlayerUiState,
+    onTap: () -> Unit,
+    onPlayPause: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 12.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(KikuColors.surface)
+            .border(1.dp, KikuColors.border, RoundedCornerShape(16.dp))
+            .clickable(onClick = onTap)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // 미니 디스크
+        Box(
+            Modifier.size(40.dp).clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            androidx.compose.ui.graphics.Color(0xFF232A38),
+                            androidx.compose.ui.graphics.Color(0xFF0E1118),
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center,
+        ) { Text("聞", color = KikuColors.text, fontSize = 20.sp, fontWeight = FontWeight.Black) }
+
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                ui.title.ifEmpty { if (ui.clipId == AssetClipRepository.RANDOM_CLIP_ID) "전체 랜덤" else "재생 중" },
+                color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                ui.sentenceJp.ifEmpty { "..." },
+                color = KikuColors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        Spacer(Modifier.width(10.dp))
+        Box(
+            Modifier.size(42.dp).clip(CircleShape).background(KikuColors.gold)
+                .clickable(onClick = onPlayPause),
+            contentAlignment = Alignment.Center,
+        ) { Text(if (ui.playing) "❚❚" else "▶", color = KikuColors.bg, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+
+        Spacer(Modifier.width(4.dp))
+        // 닫기 — 재생 중단 + 미니바 숨김
+        Box(
+            Modifier.size(36.dp).clip(CircleShape).clickable(onClick = onClose),
+            contentAlignment = Alignment.Center,
+        ) { Text("✕", color = KikuColors.textMuted, fontSize = 15.sp, fontWeight = FontWeight.Bold) }
     }
 }

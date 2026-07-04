@@ -54,11 +54,15 @@ import androidx.compose.ui.unit.sp
 /** 나우플레잉 화면 (design_handoff §2). 디스크 아트 + 문장/뜻/어휘 + 스크러버 + 컨트롤. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
+fun PlayerScreen(clipId: Int, shuffle: Boolean, fresh: Boolean, randomLevel: String? = null, onBack: () -> Unit) {
     val context = LocalContext.current
     var service by remember { mutableStateOf<PlaybackService?>(null) }
     DisposableEffectBind(context) { service = it }
-    LaunchedEffect(service, clipId, shuffle) { service?.open(clipId, shuffle) }
+    // fresh=true면 새로 적재(재시작). 미니플레이어로 복귀(fresh=false)면 이미 그 클립이면 그대로 둠.
+    LaunchedEffect(service, clipId, shuffle) {
+        val s = service ?: return@LaunchedEffect
+        if (fresh || s.state.value.clipId != clipId) s.open(clipId, shuffle, randomLevel)
+    }
     val ui by produceState(initialValue = PlayerUiState(), key1 = service) {
         val s = service
         if (s == null) value = PlayerUiState() else s.state.collect { value = it }
@@ -73,13 +77,13 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
         Modifier.fillMaxSize().background(Brush.radialGradient(listOf(KikuColors.bgGradTop, KikuColors.bg))),
     ) {
         Column(
-            Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())
+            Modifier.fillMaxSize().systemBarsPadding()
                 .padding(horizontal = 22.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // 상단 바 — 좌: 뒤로 / 중앙: 라벨·제목 / 우: 🔀 셔플(현재 클립 섞어 재생)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                CircleBtn("‹", 38.dp, KikuColors.surface, KikuColors.text, onClick = onBack)
+                CircleBtn("‹", 46.dp, KikuColors.surface, KikuColors.text, big = true, onClick = onBack)
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         if (ui.clipId == AssetClipRepository.RANDOM_CLIP_ID) "RANDOM" else "N4",
@@ -87,42 +91,49 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
                     )
                     Text(ui.title.ifEmpty { "재생" }, color = KikuColors.text, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Spacer(Modifier.width(38.dp))   // 제목 중앙 정렬 균형용(셔플은 아래 컨트롤로 내림)
+                Spacer(Modifier.width(46.dp))   // 제목 중앙 정렬 균형용(셔플은 아래 컨트롤로 내림)
             }
 
             Spacer(Modifier.height(14.dp))
-            Disc(indexLabel = "${ui.sentenceIndex + 1} / ${ui.totalSentences}")
+            Disc(progress = progress, indexLabel = "${ui.sentenceIndex + 1} / ${ui.totalSentences}")
             Spacer(Modifier.height(18.dp))
 
-            // 일본어 문장 (읽는 중 골드)
-            Text(
-                ui.sentenceJp, color = if (ui.kind == StepKind.JP) KikuColors.gold else KikuColors.text,
-                fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 33.sp,
-            )
-            Spacer(Modifier.height(8.dp))
-            if (showKr) {
+            // 문장·해석·어휘 — 길이 변화를 이 영역에서만 흡수(내부 스크롤). 아래 컨트롤은 고정.
+            Column(
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                // 일본어 문장 (읽는 중 골드)
                 Text(
-                    ui.sentenceKr, color = if (ui.kind == StepKind.KR) KikuColors.gold else KikuColors.textMuted,
-                    fontSize = 15.sp, textAlign = TextAlign.Center,
+                    ui.sentenceJp, color = if (ui.kind == StepKind.JP) KikuColors.gold else KikuColors.text,
+                    fontSize = 24.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 33.sp,
                 )
-                Spacer(Modifier.height(4.dp))
-            }
-            Text(
-                if (showKr) "한국어 숨기기" else "한국어 보기",
-                color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clickable { showKr = !showKr }.padding(4.dp),
-            )
+                Spacer(Modifier.height(8.dp))
+                if (showKr) {
+                    Text(
+                        ui.sentenceKr, color = if (ui.kind == StepKind.KR) KikuColors.gold else KikuColors.textMuted,
+                        fontSize = 15.sp, textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                Text(
+                    if (showKr) "한국어 숨기기" else "한국어 보기",
+                    color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.clickable { showKr = !showKr }.padding(4.dp),
+                )
 
-            // 어휘 칩
-            if (ui.words.isNotEmpty()) {
-                Spacer(Modifier.height(10.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ui.words.forEach { w ->
-                        Box(
-                            Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface)
-                                .border(1.dp, KikuColors.border, RoundedCornerShape(999.dp))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                        ) { Text("${w.jp} · ${w.kr}", color = KikuColors.chipText, fontSize = 12.5.sp) }
+                // 어휘 칩
+                if (ui.words.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ui.words.forEach { w ->
+                            Box(
+                                Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.surface)
+                                    .border(1.dp, KikuColors.border, RoundedCornerShape(999.dp))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) { Text("${w.jp} · ${w.kr}", color = KikuColors.chipText, fontSize = 12.5.sp) }
+                        }
                     }
                 }
             }
@@ -178,7 +189,13 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Disc(indexLabel: String) {
+private fun Disc(progress: Float, indexLabel: String) {
+    // 이스터에그: 동심원이 재생 진행도(문장 위치)에 따라 작게→크게. 뒤로 가면 자동 축소.
+    // TTS는 초 위치가 없어 진행도가 문장 단위(계단식)라, 애니메이션으로 계단을 부드럽게 덮는다.
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = 0.35f + 0.65f * progress.coerceIn(0f, 1f),
+        label = "ringScale",
+    )
     // 바깥 Box(클립 안 함)에 뱃지를 둬서 원형 클립에 잘리지 않게 한다.
     Box(Modifier.size(196.dp), contentAlignment = Alignment.Center) {
         Box(
@@ -186,12 +203,13 @@ private fun Disc(indexLabel: String) {
                 .background(Brush.radialGradient(listOf(androidx.compose.ui.graphics.Color(0xFF232A38), androidx.compose.ui.graphics.Color(0xFF0E1118)))),
             contentAlignment = Alignment.Center,
         ) {
-            // 동심원 링 3개 (inset 0/22/44)
+            // 진행도에 따라 커지는 골드 동심원 3개
             Canvas(Modifier.fillMaxSize()) {
-                listOf(0.dp, 22.dp, 44.dp).forEach { inset ->
-                    val r = (size.minDimension / 2) - inset.toPx()
+                val maxR = size.minDimension / 2
+                listOf(0.45f, 0.72f, 1.0f).forEach { frac ->
+                    val r = maxR * frac * scale
                     if (r > 0) drawCircle(
-                        color = KikuColors.gold.copy(alpha = 0.14f), radius = r,
+                        color = KikuColors.gold.copy(alpha = 0.14f + 0.12f * progress.coerceIn(0f, 1f)), radius = r,
                         center = androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2),
                         style = Stroke(width = 1.dp.toPx()),
                     )

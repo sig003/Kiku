@@ -54,6 +54,7 @@ class PlaybackService : Service() {
     private var noisyRegistered = false
     private var active = false   // 세션 진행 중(알림 표시 중) 여부
     private var currentShuffled = false      // 랜덤/셔플 재생이면 위치 저장 안 함
+    private var currentRandomLevel: String? = null   // 전체 랜덤의 레벨 필터(전체/N4/N3)
     private var lastSavedSentence = -1
 
     private val binder = LocalBinder()
@@ -98,14 +99,16 @@ class PlaybackService : Service() {
      * 클립을 적재. [shuffle]=true면 그 클립 문장을 섞어서(랜덤 재생).
      * 순차(비셔플) 재생이면 저장된 진행 위치부터 복원한다.
      */
-    fun open(clipId: Int, shuffle: Boolean = false) {
+    fun open(clipId: Int, shuffle: Boolean = false, randomLevel: String? = null) {
         scope.launch {
             ttsReady.await()
             // 이미 같은 클립을 순차 재생 중이면 위치 유지(재적재 안 함)
             if (!shuffle && !currentShuffled && state.value.clipId == clipId) return@launch
             val base =
-                if (clipId == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
-                else repo.clip(clipId) ?: return@launch
+                if (clipId == AssetClipRepository.RANDOM_CLIP_ID) {
+                    currentRandomLevel = randomLevel
+                    repo.randomClip(level = randomLevel)
+                } else repo.clip(clipId) ?: return@launch
             currentShuffled = shuffle || clipId == AssetClipRepository.RANDOM_CLIP_ID
             val clip =
                 if (shuffle && clipId != AssetClipRepository.RANDOM_CLIP_ID)
@@ -131,7 +134,7 @@ class PlaybackService : Service() {
             ttsReady.await()
             if (on) {
                 val base =
-                    if (id == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip()
+                    if (id == AssetClipRepository.RANDOM_CLIP_ID) repo.randomClip(level = currentRandomLevel)
                     else repo.clip(id) ?: return@launch
                 currentShuffled = true
                 val clip = if (id != AssetClipRepository.RANDOM_CLIP_ID)
@@ -206,6 +209,12 @@ class PlaybackService : Service() {
         active = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /** 미니바 닫기(✕) — 재생 중단 + 세션 상태 비움(진행 위치 저장값은 유지해 다음에 이어듣기). */
+    fun dismiss() {
+        stopPlayback()
+        sequencer.clear()
     }
 
     // ── 상태 변화 → 알림/미디어세션 갱신 ─────────────────────────────

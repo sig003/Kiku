@@ -49,16 +49,21 @@ class AssetClipRepository(
 
     override suspend fun clip(id: Int): Clip? = clips().firstOrNull { it.id == id }
 
-    /** 모든 클립의 문장을 섞어 [count]개만 뽑은 "랜덤" 클립. 열 때마다 새로 섞인다. */
-    suspend fun randomClip(count: Int = 100): Clip {
-        val picked = clips().flatMap { it.sentences }
+    /**
+     * 문장을 섞어 [count]개만 뽑은 "랜덤" 클립. 열 때마다 새로 섞인다.
+     * [level]이 "N4"/"N3"이면 그 레벨 클립에서만, null/"전체"면 전 레벨에서 뽑는다.
+     */
+    suspend fun randomClip(count: Int = 100, level: String? = null): Clip {
+        val all = if (level == null || level == "전체") "전체" else level
+        val pool = clips().filter { all == "전체" || it.level == all }
+        val picked = pool.flatMap { it.sentences }
             .shuffled()
             .take(count)
             .mapIndexed { i, s -> s.copy(id = i + 1) }
         return Clip(
             id = RANDOM_CLIP_ID,
             category = "랜덤",
-            title = "전체 랜덤 ${picked.size}문장",
+            title = "${all} 랜덤 ${picked.size}문장",
             mode = ClipMode.DRILL,
             sentences = picked,
         )

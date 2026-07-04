@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.sp
 
 /** 라이브러리 화면 (design_handoff §1). 브랜드바 + 전체 랜덤 히어로 + 컬렉션 행. */
 @Composable
-fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
+fun ClipListScreen(onOpen: (Int, Boolean, String?) -> Unit, bottomPadding: androidx.compose.ui.unit.Dp = 0.dp) {
     val context = LocalContext.current
     val clips by produceState(initialValue = emptyList<Clip>()) {
         value = AssetClipRepository(context).clips()
@@ -57,7 +57,7 @@ fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
     ) {
         BrandBar()
         Spacer(Modifier.height(20.dp))
-        HeroRandomCard(onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID, false) })
+        HeroRandomCard(level = filter, onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID, false, filter) })
         Spacer(Modifier.height(20.dp))
         LevelFilter(selected = filter, onSelect = { filter = it })
         Spacer(Modifier.height(6.dp))
@@ -72,7 +72,7 @@ fun ClipListScreen(onOpen: (Int, Boolean) -> Unit) {
             if (i > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(KikuColors.border))
             CollectionRow(clip, onOpen)
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp + bottomPadding))   // 미니 플레이어 활성 시 마지막 항목 안 가리게
     }
 }
 
@@ -103,14 +103,18 @@ private fun BrandBar() {
         }
         Spacer(Modifier.size(12.dp))
         Column {
-            Text("Kiku", color = KikuColors.text, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            Text("KIKU", color = KikuColors.text, fontSize = 22.sp, fontWeight = FontWeight.Black)
             Text("JLPT LISTENING", color = KikuColors.textFaint, fontSize = 11.sp, letterSpacing = 1.6.sp)
         }
     }
 }
 
 @Composable
-private fun HeroRandomCard(onClick: () -> Unit) {
+private fun HeroRandomCard(level: String, onClick: () -> Unit) {
+    val all = level == "전체"
+    val title = if (all) "전체 랜덤" else "$level 랜덤"
+    val subtitle = if (all) "모든 문장 랜덤 듣기" else "$level 문장만 랜덤 듣기"
+    val cta = if (all) "▶ 100문장 시작" else "▶ $level 랜덤 시작"
     Box(
         Modifier
             .fillMaxWidth()
@@ -130,10 +134,10 @@ private fun HeroRandomCard(onClick: () -> Unit) {
         Column {
             Text("◇ 오늘의 듣기", color = KikuColors.gold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
             Spacer(Modifier.height(8.dp))
-            Text("전체 랜덤", color = KikuColors.text, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = KikuColors.text, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(6.dp))
             Text(
-                "모든 문장 랜덤 듣기",
+                subtitle,
                 color = KikuColors.textMuted,
                 fontSize = 13.sp,
                 modifier = Modifier.fillMaxWidth(0.8f),
@@ -142,19 +146,19 @@ private fun HeroRandomCard(onClick: () -> Unit) {
             Box(
                 Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.gold).padding(horizontal = 18.dp, vertical = 10.dp),
             ) {
-                Text("▶ 100문장 시작", color = KikuColors.bg, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
+                Text(cta, color = KikuColors.bg, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold)
             }
         }
     }
 }
 
 @Composable
-private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
+private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
     val art = clipArt(clip)
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpen(clip.id, false) }   // 행 탭 = 순서대로
+            .clickable { onOpen(clip.id, false, null) }   // 행 탭 = 순서대로
             .padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -175,7 +179,7 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean) -> Unit) {
         // 재생 원형 아이콘
         Box(
             Modifier.size(34.dp).clip(CircleShape).border(1.5.dp, KikuColors.border, CircleShape)
-                .clickable { onOpen(clip.id, false) },
+                .clickable { onOpen(clip.id, false, null) },
             contentAlignment = Alignment.Center,
         ) {
             Text("▶", color = KikuColors.textMuted, fontSize = 13.sp)
