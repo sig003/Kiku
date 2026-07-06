@@ -168,6 +168,15 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Text(art.kanji, color = KikuColors.text, fontSize = 22.sp, fontWeight = FontWeight.Black)
+            // 대화 클립이면 "2명" 표시(우하단 배지)
+            if (clip.mode == ClipMode.DIALOGUE) {
+                Box(
+                    Modifier.align(Alignment.BottomEnd).size(22.dp)
+                        .clip(RoundedCornerShape(topStart = 10.dp, bottomEnd = 14.dp))
+                        .background(KikuColors.bg.copy(alpha = 0.75f)),
+                    contentAlignment = Alignment.Center,
+                ) { PeopleGlyph(KikuColors.gold, Modifier.size(15.dp)) }
+            }
         }
         Spacer(Modifier.size(14.dp))
         Column(Modifier.weight(1f)) {

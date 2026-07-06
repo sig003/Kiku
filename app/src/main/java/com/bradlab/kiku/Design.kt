@@ -1,5 +1,10 @@
 package com.bradlab.kiku
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 
 /** KIKU 디자인 토큰 (design_handoff: 다크 배경 + 골드 액센트, 아이팟/Apple Music 감성). */
@@ -28,6 +33,7 @@ fun clipArt(clip: Clip): ArtSpec {
     return when {
         "회사" in c -> ArtSpec("会社", listOf(Color(0xFF2B3A67), Color(0xFF16213E)))  // 회사생활
         "여행" in c -> ArtSpec("旅行", listOf(Color(0xFF1F5C57), Color(0xFF0E2E2B)))
+        "대화" in c -> ArtSpec("対話", listOf(Color(0xFF4A2E67), Color(0xFF241640)))  // 대화(다이얼로그)
         "회화" in c -> ArtSpec("会話", listOf(Color(0xFF6B3F1E), Color(0xFF331C0C)))  // 생활회화
         else -> ArtSpec("会社", listOf(Color(0xFF2B3A67), Color(0xFF16213E)))
     }
@@ -35,3 +41,22 @@ fun clipArt(clip: Clip): ArtSpec {
 
 /** 카테고리 라벨에서 레벨 접두("N4 ") 제거해 표시용 이름만. */
 fun Clip.displayCategory(): String = category.removePrefix("${level} ").ifEmpty { category }
+
+/** 두 사람(대화) 아이콘 — 대화 클립 아트에 "2명" 표시용. 머리(원) + 어깨(반원) 둘. */
+@Composable
+fun PeopleGlyph(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width; val h = size.height
+        fun person(cx: Float) {
+            val headR = 0.12f * w
+            drawCircle(color, radius = headR, center = Offset(cx * w, 0.34f * h))
+            val bw = 0.30f * w
+            drawArc(               // 어깨 = 채운 반원
+                color, startAngle = 180f, sweepAngle = 180f, useCenter = true,
+                topLeft = Offset(cx * w - bw / 2, 0.52f * h), size = Size(bw, bw),
+            )
+        }
+        person(0.34f)
+        person(0.66f)
+    }
+}

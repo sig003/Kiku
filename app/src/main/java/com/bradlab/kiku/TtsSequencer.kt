@@ -41,6 +41,7 @@ class TtsSequencer(
     private var jaVoices: List<Voice> = emptyList()
     private var koVoices: List<Voice> = emptyList()
     private var voicesReady = false
+    private var speakerOrder: List<String> = emptyList()   // 대화 화자 등장 순서(화자별 목소리 매핑용)
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -52,6 +53,7 @@ class TtsSequencer(
         tts.stop()
         steps = clip.toSteps()
         totalSentences = clip.sentences.size
+        speakerOrder = clip.sentences.mapNotNull { it.speaker }.distinct()   // 대화: A/B… 등장 순서
         val start = startSentence.coerceIn(0, (totalSentences - 1).coerceAtLeast(0))
         currentStepIndex = firstStepIndexOf(start)
         _state.value = PlayerUiState(
@@ -164,7 +166,11 @@ class TtsSequencer(
     private fun applyVoice(step: PlaybackStep) {
         val voices = if (step.locale.language == Locale.JAPANESE.language) jaVoices else koVoices
         if (voices.isNotEmpty()) {
-            val v = voices[step.sentenceIndex % voices.size]
+            // 대화(speaker 있음)면 화자별로 목소리 고정(A=목소리1, B=목소리2 → 남/여 번갈아).
+            // 일반 문장이면 문장 순서로 번갈아(기존 동작).
+            val speaker = clip?.sentences?.getOrNull(step.sentenceIndex)?.speaker
+            val idx = speaker?.let { speakerOrder.indexOf(it) }?.takeIf { it >= 0 } ?: step.sentenceIndex
+            val v = voices[idx % voices.size]
             if (v.name != appliedVoiceName) {
                 tts.voice = v
                 appliedVoiceName = v.name
@@ -194,6 +200,7 @@ class TtsSequencer(
             sentenceJp = s?.jp ?: "",
             sentenceKr = s?.kr ?: "",
             words = s?.words ?: emptyList(),
+            speaker = s?.speaker,
         )
     }
 }
@@ -205,6 +212,7 @@ data class PlayerUiState(
     val playing: Boolean = false,
     val sentenceIndex: Int = 0,        // 0-based
     val totalSentences: Int = 0,
+    val speaker: String? = null,       // 대화 화자(A/B…). 일반 문장은 null
     val sentenceJp: String = "",       // 현재 문장 일본어
     val sentenceKr: String = "",       // 현재 문장 한국어
     val words: List<Word> = emptyList(), // 현재 문장 단어

@@ -58,7 +58,7 @@ data class PlaybackPattern(
 
 fun ClipMode.toPattern(): PlaybackPattern = when (this) {
     ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
-    ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 2, pauseBetweenRepeatsMs = 1000, pauseAfterJpMs = 1500, readKr = true,  pauseAfterKrMs = 500, jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 1000)
+    ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
     ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseBetweenRepeatsMs = 0,    pauseAfterJpMs = 0,    readKr = false, pauseAfterKrMs = 0,   jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 800)
 }
 
@@ -99,26 +99,69 @@ fun Sentence.toSteps(index: Int, p: PlaybackPattern): List<PlaybackStep> = build
     }
 }
 
-/** 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 100문장도 끊김 없이 연속 재생. */
+/** 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 끊김 없이 연속 재생. */
 fun Clip.toSteps(): List<PlaybackStep> {
-    val base = effectivePattern
-    val body = sentences.flatMapIndexed { i, s ->
-        val p = s.patternOverride ?: base
-        val steps = s.toSteps(i, p)
-        // 문장 사이 정지: 그 문장 마지막 스텝의 pauseAfter에 얹는다
-        if (p.pauseBetweenSentencesMs > 0 && steps.isNotEmpty()) {
-            steps.dropLast(1) + steps.last().let {
-                it.copy(pauseAfterMs = it.pauseAfterMs + p.pauseBetweenSentencesMs)
-            }
-        } else steps
-    }
-    if (sentences.isEmpty()) return body
+    if (sentences.isEmpty()) return emptyList()
+    // 대화는 (A질문 + B답변)을 한 세트로 묶어 주고받기, 그 외는 문장별 드릴.
+    val body = if (mode == ClipMode.DIALOGUE) dialogueSteps() else drillSteps()
     // 클립 끝 안내: 마지막 문장 뒤 일본어 → 한국어로 "듣기가 끝났습니다"
     val last = sentences.lastIndex
     return body + listOf(
         PlaybackStep(last, StepKind.JP, OUTRO_JP, Locale.JAPANESE, pauseAfterMs = 400),
         PlaybackStep(last, StepKind.KR, OUTRO_KR, Locale.KOREAN),
     )
+}
+
+/** 문장별 드릴 평탄화(DRILL/LISTENING). */
+private fun Clip.drillSteps(): List<PlaybackStep> {
+    val base = effectivePattern
+    return sentences.flatMapIndexed { i, s ->
+        val p = s.patternOverride ?: base
+        val steps = s.toSteps(i, p)
+        if (p.pauseBetweenSentencesMs > 0 && steps.isNotEmpty()) {
+            steps.dropLast(1) + steps.last().copy(pauseAfterMs = steps.last().pauseAfterMs + p.pauseBetweenSentencesMs)
+        } else steps
+    }
+}
+
+/**
+ * 대화 평탄화(DIALOGUE) — (A질문 + B답변)을 한 세트로.
+ * [A일본어, B일본어] ×jpRepeat → [A한국어, B한국어] → [A일본어, B일본어] ×jpRepeatAfterKr → 단어(A,B).
+ */
+private fun Clip.dialogueSteps(): List<PlaybackStep> {
+    val p = effectivePattern
+    val turnGap = 700L   // A→B 사이 자연스러운 턴 간격
+    val out = ArrayList<PlaybackStep>()
+
+    fun exchange(a: Sentence, aIdx: Int, b: Sentence?, bIdx: Int, kind: StepKind, locale: Locale, endPause: Long, text: (Sentence) -> String) {
+        out += PlaybackStep(aIdx, kind, text(a), locale, pauseAfterMs = if (b != null) turnGap else endPause)
+        if (b != null) out += PlaybackStep(bIdx, kind, text(b), locale, pauseAfterMs = endPause)
+    }
+
+    var i = 0
+    while (i < sentences.size) {
+        val aIdx = i; val a = sentences[i]
+        val bIdx = i + 1; val b = sentences.getOrNull(bIdx)
+
+        val rounds = maxOf(1, p.jpRepeat)
+        for (r in 0 until rounds) {
+            val end = if (r == rounds - 1) p.pauseAfterJpMs else p.pauseBetweenRepeatsMs
+            exchange(a, aIdx, b, bIdx, StepKind.JP, Locale.JAPANESE, end) { it.jp }
+        }
+        if (p.readKr) exchange(a, aIdx, b, bIdx, StepKind.KR, Locale.KOREAN, p.pauseAfterKrMs) { it.kr }
+        repeat(maxOf(0, p.jpRepeatAfterKr)) {
+            exchange(a, aIdx, b, bIdx, StepKind.JP, Locale.JAPANESE, p.pauseBetweenRepeatsMs) { it.jp }
+        }
+        if (p.readWords) {
+            a.words.forEach { out += PlaybackStep(aIdx, StepKind.WORD_JP, it.jp, Locale.JAPANESE); out += PlaybackStep(aIdx, StepKind.WORD_KR, it.kr, Locale.KOREAN) }
+            b?.words?.forEach { out += PlaybackStep(bIdx, StepKind.WORD_JP, it.jp, Locale.JAPANESE); out += PlaybackStep(bIdx, StepKind.WORD_KR, it.kr, Locale.KOREAN) }
+        }
+        if (out.isNotEmpty() && p.pauseBetweenSentencesMs > 0) {
+            out[out.lastIndex] = out.last().copy(pauseAfterMs = out.last().pauseAfterMs + p.pauseBetweenSentencesMs)
+        }
+        i += 2
+    }
+    return out
 }
 
 private const val OUTRO_JP = "聞き取りが終わりました。"

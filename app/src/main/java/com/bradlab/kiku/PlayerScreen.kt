@@ -104,6 +104,11 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, fresh: Boolean, randomLevel: Str
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
+                // 화자(대화 클립일 때만)
+                ui.speaker?.let { sp ->
+                    Text(sp, color = KikuColors.gold, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Spacer(Modifier.height(6.dp))
+                }
                 // 일본어 문장 (읽는 중 골드)
                 Text(
                     ui.sentenceJp, color = if (ui.kind == StepKind.JP) KikuColors.gold else KikuColors.text,
