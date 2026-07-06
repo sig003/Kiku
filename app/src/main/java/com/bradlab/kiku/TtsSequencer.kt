@@ -42,6 +42,7 @@ class TtsSequencer(
     private var koVoices: List<Voice> = emptyList()
     private var voicesReady = false
     private var speakerOrder: List<String> = emptyList()   // 대화 화자 등장 순서(화자별 목소리 매핑용)
+    private var pairVoiceSwap: List<Boolean> = emptyList()  // 대화: 짝(exchange)마다 A/B 남녀 무작위 교체
 
     private val _state = MutableStateFlow(PlayerUiState())
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
@@ -54,6 +55,10 @@ class TtsSequencer(
         steps = clip.toSteps()
         totalSentences = clip.sentences.size
         speakerOrder = clip.sentences.mapNotNull { it.speaker }.distinct()   // 대화: A/B… 등장 순서
+        // 대화면 짝마다 남녀 순서를 무작위로(남→여, 여→남 섞기). 화자 2명일 때만.
+        pairVoiceSwap = if (speakerOrder.size >= 2)
+            List((clip.sentences.size + 1) / 2) { kotlin.random.Random.nextBoolean() }
+        else emptyList()
         val start = startSentence.coerceIn(0, (totalSentences - 1).coerceAtLeast(0))
         currentStepIndex = firstStepIndexOf(start)
         _state.value = PlayerUiState(
@@ -149,27 +154,41 @@ class TtsSequencer(
         val all = try { tts.voices?.toList() ?: emptyList() } catch (e: Exception) { emptyList() }
         jaVoices = pickAlternatingVoices(all, "ja")
         koVoices = pickAlternatingVoices(all, "ko")
-        Log.i("KikuVoices", "번갈아 사용 — ja=${jaVoices.map { it.name }} ko=${koVoices.map { it.name }}")
+        Log.i("KikuVoices", "선택 — ja=${jaVoices.map { it.name }} ko=${koVoices.map { it.name }} (여성, 남성 순)")
     }
 
-    /** 오프라인·뚜렷한 화자(-x-, 구형 htm 제외) 중 서로 다른 목소리 2개. 없으면 1개 폴백. */
+    /** 오프라인·뚜렷한 화자(-x-, 구형 htm 제외) 중 성별이 다른 목소리 2개(여성, 남성 순). 없으면 폴백. */
     private fun pickAlternatingVoices(all: List<Voice>, lang: String): List<Voice> {
         val cands = all.filter {
             it.locale.language == lang && !it.isNetworkConnectionRequired &&
                 it.name.contains("-x-") && !it.name.contains("-htm-")
-        }.sortedBy { it.name }
-        val distinct = cands.distinctBy { it.name.substringBeforeLast("-") } // -local/-network 중복 제거
-        return distinct.take(2).ifEmpty { all.filter { it.locale.language == lang }.take(1) }
+        }.sortedBy { it.name }.distinctBy { it.name.substringBeforeLast("-") } // -local/-network 중복 제거
+        if (cands.isEmpty()) return all.filter { it.locale.language == lang }.take(1)
+        // 알려진 남성 코드(구글 온디바이스)로 [여성, 남성] 순서를 맞춘다 → 언어 간 슬롯 성별 정렬.
+        val maleCodes = if (lang == "ko") listOf("koc", "kod") else listOf("jac", "jad")
+        val male = cands.firstOrNull { v -> maleCodes.any { v.name.contains("-$it") } }
+        val female = cands.firstOrNull { it != male }
+        return listOfNotNull(female, male).ifEmpty { cands.take(2) }.take(2)
     }
 
     /** 현재 스텝에 목소리를 적용 — 문장 인덱스 홀짝으로 두 목소리를 번갈아. 바뀔 때만 재설정. */
     private fun applyVoice(step: PlaybackStep) {
         val voices = if (step.locale.language == Locale.JAPANESE.language) jaVoices else koVoices
         if (voices.isNotEmpty()) {
-            // 대화(speaker 있음)면 화자별로 목소리 고정(A=목소리1, B=목소리2 → 남/여 번갈아).
-            // 일반 문장이면 문장 순서로 번갈아(기존 동작).
+            // 대화: 일본어 문장 + 한국어 해석은 화자별 목소리(같은 슬롯 → 성별 일치, 짝마다 순서 무작위).
+            //       단어(일/한)만 한 목소리(나레이터, 인덱스 0)로 통일.
+            // 일반 문장(DRILL): 문장 순서로 번갈아(기존 동작).
             val speaker = clip?.sentences?.getOrNull(step.sentenceIndex)?.speaker
-            val idx = speaker?.let { speakerOrder.indexOf(it) }?.takeIf { it >= 0 } ?: step.sentenceIndex
+            val speakerIdx = speaker?.let { speakerOrder.indexOf(it) }?.takeIf { it >= 0 }
+            val isWord = step.kind == StepKind.WORD_JP || step.kind == StepKind.WORD_KR
+            val idx = when {
+                speakerIdx != null && !isWord -> {   // 일본어 문장 + 한국어 해석 → 화자별
+                    val swap = pairVoiceSwap.getOrElse(step.sentenceIndex / 2) { false }
+                    speakerIdx + if (swap) 1 else 0
+                }
+                speakerIdx != null -> 0              // 대화의 단어 → 고정 목소리
+                else -> step.sentenceIndex            // 일반 문장
+            }
             val v = voices[idx % voices.size]
             if (v.name != appliedVoiceName) {
                 tts.voice = v

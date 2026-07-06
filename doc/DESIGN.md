@@ -182,7 +182,9 @@ PlaybackService (Foreground, type=mediaPlayback)
 
 **핵심:** 이 셋은 **새 엔진이 아니라 재생 패턴 프리셋**일 뿐이다. 평탄화·시퀀서·백그라운드는 그대로고, 달라지는 건 ① 문장에 화자가 붙느냐, ② 한 문장을 어떻게 펼치냐(`PlaybackPattern`)뿐이다.
 
-> **구현 상태(2026-07-02):** DRILL은 구현·검증 완료. **DIALOGUE(한 문장씩 주고받기)·LISTENING(실전 청해 멀티턴)은 콘텐츠 + 화자→voice 매핑 작업으로 예정**(TODO 9·10). 엔진·서비스·UI는 그대로 재사용하고, 문장에 `speaker`를 채우고 `mode`만 지정하면 된다. 난이도는 N4에 더해 **N3 확장 예정**(TODO 11, `Clip.level`).
+> **구현 상태(2026-07-06):** DRILL·DIALOGUE·N3 완료. **LISTENING(실전 청해 멀티턴)만 예정**(TODO 10).
+> - **DIALOGUE**: (A질문+B답변)을 **한 세트로** 평탄화(`Clip.dialogueSteps()`) — `[A일,B일]×3 → [A한,B한] → [A일,B일] → 단어`. 콘텐츠는 `speaker`("A"/"B") 지정 + `mode: DIALOGUE`. 목록 아트에 2인 배지.
+> - **화자 목소리**: 성별 다른 목소리 2개를 골라 화자에 매핑. **짝마다 남/여 순서 무작위**(`pairVoiceSwap`). **일본어 문장 + 한국어 해석은 같은 슬롯(성별 일치)**, **단어만 고정 목소리(나레이터)**. voice 성별은 API로 못 얻어 구글 온디바이스 남성 코드(ko: koc/kod, ja: jac/jad)로 `[여,남]` 정렬(§7.3). 기기 편차 있으면 mp3(§10.3).
 
 > **화자→voice 매핑(DIALOGUE):** 문장의 `speaker`에 따라 다른 TTS voice로 읽어 화자를 구분한다. 내장 TTS에 남·여 일본어 voice가 있어 성별 기준 구분이 가능함을 실기기로 확인(§7.3). 특정 voice 이름 하드코딩은 기기 편차로 깨지므로, **성별/역할로 후보 voice를 조회해 매핑하고 없으면 기본 voice로 폴백.** 구체 구현은 TtsSequencer(TODO 2)에서.
 
