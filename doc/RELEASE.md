@@ -15,9 +15,10 @@
 - [x] **서명 설정** (`build.gradle.kts` `signingConfigs.release`)
 - [x] **R8 켜기** (minify + shrinkResources) + serialization keep 규칙(`proguard-rules.pro`)
 - [x] **AAB 빌드**: `app/build/outputs/bundle/release/app-release.aab` + R8 실기기 검증(클립 정상 로딩)
-- [ ] 스토어 등록 자료(아이콘512/피처그래픽/스샷/설명)
-- [ ] 데이터보안·개인정보·콘텐츠등급 폼
-- [ ] 내부 테스트 트랙 업로드 → 프로덕션
+- [x] 스토어 등록 자료(아이콘512/피처그래픽/스샷/설명) — `doc/store/`
+- [x] 데이터보안·개인정보·콘텐츠등급 폼 (수집없음/전체이용가/광고없음/13세+)
+- [x] **내부 테스트 트랙 출시 + 실기기 Play 설치 확인**
+- [ ] **비공개 테스트(신규 개인계정: 테스터 12~20명·14일)** → 이후 프로덕션 신청
 
 > ⚠️ **키 백업 필수**: `kiku-release.jks` + 비밀번호는 안전한 곳(비번관리자/클라우드)에 백업. 분실 시 이 앱을 영영 업데이트 못 함. `keystore.properties`·`.jks`는 절대 커밋 금지(이미 `.gitignore`).
 > 📄 **mapping 파일**: R8 난독화 후 크래시 로그 해독용 `app/build/outputs/mapping/release/mapping.txt` — 업로드 시 함께 올리면 좋음.

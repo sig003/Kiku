@@ -18,7 +18,7 @@ KIKU는 사용자의 개인정보를 **수집하지 않습니다.**
 - **광고·분석 없음**: 광고 및 분석 도구를 사용하지 않습니다.
 - **권한**: 백그라운드 재생과 재생 알림을 위해 포그라운드 서비스·알림 권한을 사용하며, 이는 개인정보 수집과 무관합니다.
 
-문의: <연락 이메일 주소 입력>
+문의: sigmhk@gmail.com
 
 ---
 
@@ -35,7 +35,7 @@ KIKU does **not collect any personal information.**
 - **No ads or analytics.**
 - **Permissions**: Foreground service and notification permissions are used only for background audio playback and are unrelated to personal data.
 
-Contact: <your contact email>
+Contact: sigmhk@gmail.com
 
 ---
 
