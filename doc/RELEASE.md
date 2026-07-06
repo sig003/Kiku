@@ -9,6 +9,19 @@
 - **로그인·서버·수집 없음** → 데이터 보안/개인정보 선언이 아주 간단.
 - 실제로 신경 쓸 핵심은 **① 릴리스 서명 키**, **② 개발자 계정 + 폼 작성** 두 가지.
 
+### 진행 상황 (2026-07-06)
+- [x] 개발자 계정 등록 + 결제
+- [x] **릴리스 키스토어 생성** (`kiku-release.jks`, git 제외) + `keystore.properties`(git 제외)
+- [x] **서명 설정** (`build.gradle.kts` `signingConfigs.release`)
+- [x] **R8 켜기** (minify + shrinkResources) + serialization keep 규칙(`proguard-rules.pro`)
+- [x] **AAB 빌드**: `app/build/outputs/bundle/release/app-release.aab` + R8 실기기 검증(클립 정상 로딩)
+- [ ] 스토어 등록 자료(아이콘512/피처그래픽/스샷/설명)
+- [ ] 데이터보안·개인정보·콘텐츠등급 폼
+- [ ] 내부 테스트 트랙 업로드 → 프로덕션
+
+> ⚠️ **키 백업 필수**: `kiku-release.jks` + 비밀번호는 안전한 곳(비번관리자/클라우드)에 백업. 분실 시 이 앱을 영영 업데이트 못 함. `keystore.properties`·`.jks`는 절대 커밋 금지(이미 `.gitignore`).
+> 📄 **mapping 파일**: R8 난독화 후 크래시 로그 해독용 `app/build/outputs/mapping/release/mapping.txt` — 업로드 시 함께 올리면 좋음.
+
 ---
 
 ## 1. 앱 서명 (릴리스) — ★가장 중요

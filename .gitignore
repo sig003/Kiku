@@ -71,3 +71,6 @@ secrets.properties
 
 # macOS
 .DS_Store
+
+# 릴리스 서명 비밀번호(절대 커밋 금지)
+keystore.properties
