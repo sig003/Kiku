@@ -45,6 +45,8 @@ captures/
 # Keystore files (앱 서명 키 — 절대 커밋 금지)
 *.jks
 *.keystore
+# 예외: 프로젝트 공유 디버그 키(공개 표준값 — PC 간 재설치 문제 방지용, 커밋 OK)
+!debug.keystore
 
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild/

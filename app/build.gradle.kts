@@ -20,6 +20,17 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // 프로젝트 공유 디버그 키 — PC마다 다른 debug.keystore로 인한 재설치 문제 방지.
+    // 표준 디버그 자격증명(공개값)이라 커밋해도 안전(릴리스 키 .jks는 절대 커밋 금지).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             optimization {
