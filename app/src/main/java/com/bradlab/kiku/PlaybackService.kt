@@ -13,7 +13,9 @@ import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -167,6 +169,10 @@ class PlaybackService : Service() {
     override fun onBind(intent: Intent?): IBinder = binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {   // 미디어버튼 리시버로 온 이어폰 키
+            extractKey(intent)?.let { handleMediaKey(it) }
+            return START_NOT_STICKY
+        }
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> playPause()
             ACTION_NEXT -> next()
@@ -185,6 +191,7 @@ class PlaybackService : Service() {
         // started 서비스로 승격 → 화면이 언바인드해도 생존
         startService(Intent(this, PlaybackService::class.java))
         active = true
+        startKeepAlive()   // 우리 프로세스가 오디오 재생 중임을 OS에 알림(이어폰 버튼 라우팅용)
         startForegroundCompat(buildNotification(state.value))
         registerNoisy()
         sequencer.play()
@@ -192,6 +199,7 @@ class PlaybackService : Service() {
 
     fun pause() {
         sequencer.pause()
+        stopKeepAlive()
         unregisterNoisy()
         // 알림은 남겨 재개 가능하게(포그라운드에서만 분리)
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -204,11 +212,50 @@ class PlaybackService : Service() {
 
     private fun stopPlayback() {
         sequencer.pause()
+        stopKeepAlive()
         unregisterNoisy()
         abandonFocus()
         active = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    // ── 무음 킵얼라이브: 우리 프로세스가 오디오 재생 중임을 OS가 인식하게 해
+    //    이어폰/BT 미디어 버튼이 우리 세션으로 라우팅되게 한다(TTS는 별도 프로세스라 필요). ──
+    private var keepAlive: AudioTrack? = null
+
+    private fun startKeepAlive() {
+        if (keepAlive != null) return
+        val sampleRate = 8000
+        val frames = sampleRate / 10          // 0.1초
+        runCatching {
+            val at = AudioTrack.Builder()
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAudioFormat(
+                    AudioFormat.Builder()
+                        .setSampleRate(sampleRate)
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build()
+                )
+                .setBufferSizeInBytes(frames * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            at.write(ShortArray(frames), 0, frames)   // 무음
+            at.setLoopPoints(0, frames, -1)           // 무한 반복
+            at.play()
+            keepAlive = at
+        }
+    }
+
+    private fun stopKeepAlive() {
+        keepAlive?.let { runCatching { it.stop() }; runCatching { it.release() } }
+        keepAlive = null
     }
 
     /** 미니바 닫기(✕) — 재생 중단 + 세션 상태 비움(진행 위치 저장값은 유지해 다음에 이어듣기). */
@@ -263,36 +310,47 @@ class PlaybackService : Service() {
 
     private fun setupMediaSession() {
         mediaSession = MediaSession(this, "kiku").apply {
+            // 이어폰/블루투스 하드웨어 버튼을 이 서비스로 받도록 리시버 등록(없으면 세션이 후보에서 빠짐)
+            setMediaButtonReceiver(
+                PendingIntent.getService(
+                    this@PlaybackService, 1,
+                    Intent(Intent.ACTION_MEDIA_BUTTON).setClass(this@PlaybackService, PlaybackService::class.java),
+                    PendingIntent.FLAG_IMMUTABLE,
+                )
+            )
+            @Suppress("DEPRECATION")
+            setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
             setCallback(object : MediaSession.Callback() {
                 override fun onPlay() = play()
                 override fun onPause() = pause()
                 override fun onSkipToNext() = next()
                 override fun onSkipToPrevious() = prev()
                 override fun onStop() = stopPlayback()
-
-                // 이어폰/블루투스 하드웨어 버튼 직접 처리 (일부 기기는 위 콜백으로 안 옴)
-                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean {
-                    val ev = if (Build.VERSION.SDK_INT >= 33)
-                        mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-                    else @Suppress("DEPRECATION")
-                        mediaButtonIntent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                    if (ev != null && ev.action == KeyEvent.ACTION_DOWN) {
-                        when (ev.keyCode) {
-                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> playPause()
-                            KeyEvent.KEYCODE_MEDIA_PLAY -> play()
-                            KeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
-                            KeyEvent.KEYCODE_MEDIA_NEXT -> next()
-                            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> prev()
-                            KeyEvent.KEYCODE_MEDIA_STOP -> stopPlayback()
-                            else -> return super.onMediaButtonEvent(mediaButtonIntent)
-                        }
-                        return true
-                    }
-                    return super.onMediaButtonEvent(mediaButtonIntent)
-                }
+                override fun onMediaButtonEvent(mediaButtonIntent: Intent): Boolean =
+                    extractKey(mediaButtonIntent)?.takeIf { handleMediaKey(it) }?.let { true }
+                        ?: super.onMediaButtonEvent(mediaButtonIntent)
             })
             isActive = true
         }
+    }
+
+    private fun extractKey(intent: Intent): KeyEvent? =
+        if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        else @Suppress("DEPRECATION") intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+
+    /** 미디어 키 처리(이어폰/BT/알림 공통). 처리했으면 true. */
+    private fun handleMediaKey(ev: KeyEvent): Boolean {
+        if (ev.action != KeyEvent.ACTION_DOWN) return false
+        when (ev.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> playPause()
+            KeyEvent.KEYCODE_MEDIA_PLAY -> play()
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> pause()
+            KeyEvent.KEYCODE_MEDIA_NEXT -> next()
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> prev()
+            KeyEvent.KEYCODE_MEDIA_STOP -> stopPlayback()
+            else -> return false
+        }
+        return true
     }
 
     private fun updateMediaSession(st: PlayerUiState) {
@@ -373,6 +431,7 @@ class PlaybackService : Service() {
 
     override fun onDestroy() {
         unregisterNoisy()
+        stopKeepAlive()
         abandonFocus()
         sequencer.release()
         mediaSession.release()
