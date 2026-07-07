@@ -205,6 +205,13 @@ class PlaybackService : Service() {
         stopForeground(STOP_FOREGROUND_DETACH)
     }
 
+    // 최근앱에서 앱을 밀어내면 재생 종료 + 서비스 정리(사용자 기대 동작).
+    // 백그라운드로 계속 듣고 싶으면 홈 버튼으로 나가면 됨.
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopPlayback()
+        super.onTaskRemoved(rootIntent)
+    }
+
     fun next() = sequencer.next()
     fun prev() = sequencer.prev()
     fun replay() = sequencer.replay()

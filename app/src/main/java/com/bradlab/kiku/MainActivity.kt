@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -27,7 +28,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,9 +69,45 @@ class MainActivity : ComponentActivity() {
                         notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
+                JapaneseVoiceCheck()   // 일본어 TTS 없으면 설치 안내(없으면 한자가 한국어로 읽힘)
                 KikuRoot()
             }
         }
+    }
+}
+
+/**
+ * 일본어 TTS 음성이 없으면 설치 안내. 없으면 일본어(한자)가 한국어 발음으로 잘못 읽힌다(§7.2).
+ */
+@Composable
+private fun JapaneseVoiceCheck() {
+    val context = LocalContext.current
+    var missing by remember { mutableStateOf(false) }
+    var dismissed by rememberSaveable { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        var tts: TextToSpeech? = null
+        tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val ja = runCatching { tts?.isLanguageAvailable(java.util.Locale.JAPANESE) }
+                    .getOrNull() ?: TextToSpeech.LANG_NOT_SUPPORTED
+                missing = ja < TextToSpeech.LANG_AVAILABLE
+            }
+        }
+        onDispose { runCatching { tts?.shutdown() } }
+    }
+    if (missing && !dismissed) {
+        AlertDialog(
+            onDismissRequest = { dismissed = true },
+            title = { Text("일본어 음성 설치 필요") },
+            text = { Text("이 기기에 일본어 TTS 음성이 없어, 일본어가 한국어 발음으로 잘못 읽힐 수 있어요. 일본어 음성을 설치하면 정상적으로 들립니다. (설정 → 언어 → 텍스트 음성 변환에서 일본어 데이터 설치)") },
+            confirmButton = {
+                TextButton(onClick = {
+                    dismissed = true
+                    runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
+                }) { Text("설치하기") }
+            },
+            dismissButton = { TextButton(onClick = { dismissed = true }) { Text("나중에") } },
+        )
     }
 }
 
