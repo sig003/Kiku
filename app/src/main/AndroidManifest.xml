@@ -29,10 +29,13 @@
             </intent-filter>
         </activity>
 
+        <!-- stopWithTask=true: 최근앱에서 밀어내면 OS가 서비스를 강제 종료(재생 즉시 정지).
+             일부 기기에서 onTaskRemoved가 호출되지 않아 재생이 이어지는 문제 대응. -->
         <service
             android:name=".PlaybackService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="true" />
     </application>
 
 </manifest>

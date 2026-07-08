@@ -11,6 +11,7 @@ import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -57,7 +58,12 @@ class MainActivity : ComponentActivity() {
         // 스플래시 설치는 super.onCreate 전에 (OS가 런치 스플래시를 본 테마로 전환)
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // 앱은 항상 다크 배경 → 시스템 테마와 무관하게 상태바·내비바 아이콘을 밝게(흰색) 고정.
+        // (기본 enableEdgeToEdge()는 라이트 모드에서 아이콘을 검게 칠해 다크 배경에서 안 보임)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         setContent {
             KikuTheme {
                 // 미디어 알림 표시용 권한 (안드로이드 13+). 거부돼도 재생은 됨(알림만 안 보임).
