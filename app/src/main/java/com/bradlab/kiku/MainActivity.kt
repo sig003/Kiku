@@ -105,12 +105,32 @@ private fun JapaneseVoiceCheck() {
         AlertDialog(
             onDismissRequest = { dismissed = true },
             title = { Text("일본어 음성 설치 필요") },
-            text = { Text("이 기기에 일본어 TTS 음성이 없어, 일본어가 한국어 발음으로 잘못 읽힐 수 있어요. 일본어 음성을 설치하면 정상적으로 들립니다. (설정 → 언어 → 텍스트 음성 변환에서 일본어 데이터 설치)") },
+            text = {
+                Text(
+                    "이 기기에 일본어 음성이 없어 일본어가 한국어 발음으로 잘못 읽혀요.\n\n" +
+                        "아래 '음성 설치'를 눌러 일본어 음성을 받아 주세요. " +
+                        "만약 설치 화면이 안 열리면 'TTS 설정 열기'로 들어가, " +
+                        "음성 데이터(언어) 목록에서 일본어를 추가하면 됩니다.\n\n" +
+                        "(설치 위치는 기기 제조사마다 조금씩 달라요. 한 번만 설치하면 됩니다.)"
+                )
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    dismissed = true
-                    runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
-                }) { Text("설치하기") }
+                Row {
+                    TextButton(onClick = {
+                        dismissed = true
+                        runCatching { context.startActivity(Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
+                    }) { Text("음성 설치") }
+                    TextButton(onClick = {
+                        dismissed = true
+                        // 기기마다 TTS 설정 위치가 달라(삼성=일반, 순정=시스템) 설정 화면을 직접 연다.
+                        val opened = runCatching {
+                            context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                        }.isSuccess
+                        if (!opened) runCatching {
+                            context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                        }
+                    }) { Text("TTS 설정 열기") }
+                }
             },
             dismissButton = { TextButton(onClick = { dismissed = true }) { Text("나중에") } },
         )
