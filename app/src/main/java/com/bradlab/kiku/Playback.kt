@@ -36,13 +36,27 @@ data class Clip(
     val title: String,
     val mode: ClipMode = ClipMode.DRILL,
     val pattern: PlaybackPattern? = null,         // 클립 전체 커스텀 (있으면 mode 덮어씀)
-    val sentences: List<Sentence>,
+    val sentences: List<Sentence> = emptyList(),
+    val quiz: List<QuizItem> = emptyList(),       // QUIZ 모드(즉시응답) 전용 문항
+)
+
+/**
+ * 즉시응답(即時応答) 문항 — JLPT 청해 유형(N3 문제5 / N4 문제4).
+ * 짧은 말([promptJp])을 듣고, 3개 응답([options]) 중 알맞은 것([answer], 1-based)을 고른다.
+ */
+@Serializable
+data class QuizItem(
+    val id: Int,
+    val promptJp: String,
+    val promptKr: String,
+    val options: List<Word>,   // jp/kr 쌍(응답 3개)
+    val answer: Int,           // 정답 번호(1~3)
 )
 
 // ── 재생 패턴 프리셋 (§2.7) ───────────────────────────────────────
 
 @Serializable
-enum class ClipMode { DRILL, DIALOGUE, LISTENING }
+enum class ClipMode { DRILL, DIALOGUE, LISTENING, QUIZ }
 
 @Serializable
 data class PlaybackPattern(
@@ -60,6 +74,7 @@ fun ClipMode.toPattern(): PlaybackPattern = when (this) {
     ClipMode.DRILL     -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
     ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
     ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseBetweenRepeatsMs = 0,    pauseAfterJpMs = 0,    readKr = false, pauseAfterKrMs = 0,   jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 800)
+    ClipMode.QUIZ      -> PlaybackPattern()   // 미사용 — quizSteps()가 직접 스텝을 구성
 }
 
 /** 클립이 실제로 쓰는 패턴: 커스텀 pattern이 있으면 그것, 없으면 mode 프리셋. */
@@ -67,15 +82,16 @@ val Clip.effectivePattern: PlaybackPattern get() = pattern ?: mode.toPattern()
 
 // ── 스텝 평탄화 (§2.3) ────────────────────────────────────────────
 
-// JP: 일본어 문장 / KR: 한국어 해석 / WORD_JP: 일본어 단어 / WORD_KR: 단어 한국어 뜻
-enum class StepKind { JP, KR, WORD_JP, WORD_KR }
+// JP: 일본어 문장 / KR: 한국어 해석 / WORD_JP: 일본어 단어 / WORD_KR: 단어 한국어 뜻 / CHIME: 효과음(딩동)
+enum class StepKind { JP, KR, WORD_JP, WORD_KR, CHIME }
 
 data class PlaybackStep(
-    val sentenceIndex: Int,   // 어느 문장에 속하는지 (점프/하이라이트용)
+    val sentenceIndex: Int,   // 어느 문장/문항에 속하는지 (점프/하이라이트용)
     val kind: StepKind,
     val text: String,
     val locale: Locale,
     val pauseAfterMs: Long = 0,
+    val speaker: String? = null,   // QUIZ 음성 배역: "A"=질문, "B"=응답. 그 외 null(내레이터)
 )
 
 /** 한 문장 → 스텝 펼침. 펼치는 방식은 PlaybackPattern이 결정한다. */
@@ -99,8 +115,18 @@ fun Sentence.toSteps(index: Int, p: PlaybackPattern): List<PlaybackStep> = build
     }
 }
 
+/**
+ * QUIZ 클립은 sentences가 없어도 되므로, 재생/내비게이션용으로 문항 prompt를 문장으로 파생한다.
+ * (sentences.size = 문항 수 → totalSentences·다음/이전·화면 표시가 그대로 동작)
+ */
+fun Clip.normalized(): Clip =
+    if (mode == ClipMode.QUIZ && sentences.isEmpty() && quiz.isNotEmpty())
+        copy(sentences = quiz.map { Sentence(id = it.id, speaker = "A", jp = it.promptJp, kr = it.promptKr) })
+    else this
+
 /** 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 끊김 없이 연속 재생. */
 fun Clip.toSteps(): List<PlaybackStep> {
+    if (mode == ClipMode.QUIZ) return quizSteps()
     if (sentences.isEmpty()) return emptyList()
     // 대화는 (A질문 + B답변)을 한 세트로 묶어 주고받기, 그 외는 문장별 드릴.
     val body = if (mode == ClipMode.DIALOGUE) dialogueSteps() else drillSteps()
@@ -161,6 +187,47 @@ private fun Clip.dialogueSteps(): List<PlaybackStep> {
         }
         i += 2
     }
+    return out
+}
+
+/**
+ * 즉시응답(QUIZ) 평탄화 — 문항마다 "시험 → 정답 → 해설(복습)".
+ *
+ * [문제 N] → (1단계·전부 일본어) 질문A → 1번/응답B → 2번/응답B → 3번/응답B → (생각 틈) → "정답 N번"
+ *          → (2단계·일+한) 질문A→해석 → 1번 응답B→해석 → 2번… → 3번…(정답엔 "(정답)")
+ * 음성: 질문=화자A, 응답=화자B, 번호·정답·해석=내레이터(한국어).
+ */
+private fun Clip.quizSteps(): List<PlaybackStep> {
+    val JA = Locale.JAPANESE; val KO = Locale.KOREAN
+    val out = ArrayList<PlaybackStep>()
+    fun bumpLastPause(extra: Long) {
+        if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(pauseAfterMs = out.last().pauseAfterMs + extra)
+    }
+    quiz.forEachIndexed { i, q ->
+        out += PlaybackStep(i, StepKind.JP, "問題${i + 1}。", JA, pauseAfterMs = 1800)
+        // 1단계: 시험(전부 일본어)
+        out += PlaybackStep(i, StepKind.JP, q.promptJp, JA, pauseAfterMs = 1200, speaker = "A")
+        q.options.forEachIndexed { k, o ->
+            out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 250)
+            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 1200, speaker = "B")
+        }
+        bumpLastPause(1500)   // 응답3 뒤 = 생각할 틈(총 2.7초)
+        out += PlaybackStep(i, StepKind.JP, "正解は${q.answer}番です。", JA, pauseAfterMs = 900)
+        // 2단계: 복습(반복) — 딩동 신호 후 일본어 + 한국어 해석
+        out += PlaybackStep(i, StepKind.CHIME, "", JA, pauseAfterMs = 500)
+        out += PlaybackStep(i, StepKind.JP, q.promptJp, JA, pauseAfterMs = 1000, speaker = "A")
+        out += PlaybackStep(i, StepKind.KR, q.promptKr, KO, pauseAfterMs = 900)
+        q.options.forEachIndexed { k, o ->
+            out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 200)
+            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 1000, speaker = "B")
+            val kr = if (q.answer == k + 1) "${o.kr} (정답)" else o.kr
+            out += PlaybackStep(i, StepKind.KR, kr, KO, pauseAfterMs = 800)
+        }
+        bumpLastPause(1800)   // 문항 간 간격
+    }
+    val last = (quiz.size - 1).coerceAtLeast(0)
+    out += PlaybackStep(last, StepKind.JP, OUTRO_JP, JA, pauseAfterMs = 400)
+    out += PlaybackStep(last, StepKind.KR, OUTRO_KR, KO)
     return out
 }
 

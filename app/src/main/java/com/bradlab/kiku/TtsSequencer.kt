@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 class TtsSequencer(
     private val tts: TextToSpeech,
     private val scope: CoroutineScope,
+    private val playChime: (suspend () -> Unit)? = null,   // CHIME 스텝에서 효과음(딩동) 재생·대기
 ) {
     private var clip: Clip? = null
     private var steps: List<PlaybackStep> = emptyList()
@@ -83,9 +84,13 @@ class TtsSequencer(
             while (currentStepIndex < steps.size) {
                 val step = steps[currentStepIndex]
                 _state.update { it.withSentence(step.sentenceIndex).copy(kind = step.kind) }
-                if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }        // 속도 바뀔 때만
-                applyVoice(step)   // 문장 홀짝으로 목소리 번갈아(+언어), 바뀔 때만 재설정
-                tts.speakAndAwait(vocalize(step.text, step.locale)) // onDone까지 대기 (§2.4)
+                if (step.kind == StepKind.CHIME) {
+                    playChime?.invoke()   // 딩동 효과음 재생·대기 (음원 길이만큼)
+                } else {
+                    if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }    // 속도 바뀔 때만
+                    applyVoice(step)   // 문장 홀짝으로 목소리 번갈아(+언어), 바뀔 때만 재설정
+                    tts.speakAndAwait(vocalize(step.text, step.locale)) // onDone까지 대기 (§2.4)
+                }
                 if (step.pauseAfterMs > 0) delay(step.pauseAfterMs)
                 currentStepIndex++
             }
@@ -173,21 +178,31 @@ class TtsSequencer(
 
     /** 현재 스텝에 목소리를 적용 — 문장 인덱스 홀짝으로 두 목소리를 번갈아. 바뀔 때만 재설정. */
     private fun applyVoice(step: PlaybackStep) {
-        val voices = if (step.locale.language == Locale.JAPANESE.language) jaVoices else koVoices
+        val isJa = step.locale.language == Locale.JAPANESE.language
+        val voices = if (isJa) jaVoices else koVoices
         if (voices.isNotEmpty()) {
             // 대화: 일본어 문장 + 한국어 해석은 화자별 목소리(같은 슬롯 → 성별 일치, 짝마다 순서 무작위).
             //       단어(일/한)만 한 목소리(나레이터, 인덱스 0)로 통일.
             // 일반 문장(DRILL): 문장 순서로 번갈아(기존 동작).
-            val speaker = clip?.sentences?.getOrNull(step.sentenceIndex)?.speaker
-            val speakerIdx = speaker?.let { speakerOrder.indexOf(it) }?.takeIf { it >= 0 }
-            val isWord = step.kind == StepKind.WORD_JP || step.kind == StepKind.WORD_KR
-            val idx = when {
-                speakerIdx != null && !isWord -> {   // 일본어 문장 + 한국어 해석 → 화자별
-                    val swap = pairVoiceSwap.getOrElse(step.sentenceIndex / 2) { false }
-                    speakerIdx + if (swap) 1 else 0
+            val idx = if (clip?.mode == ClipMode.QUIZ) {
+                // 즉시응답: 질문=화자A(슬롯0), 응답=화자B(슬롯1), 한국어(번호·정답·해석)=내레이터(슬롯0).
+                when {
+                    !isJa -> 0
+                    step.speaker == "B" -> 1
+                    else -> 0
                 }
-                speakerIdx != null -> 0              // 대화의 단어 → 고정 목소리
-                else -> step.sentenceIndex            // 일반 문장
+            } else {
+                val speaker = clip?.sentences?.getOrNull(step.sentenceIndex)?.speaker
+                val speakerIdx = speaker?.let { speakerOrder.indexOf(it) }?.takeIf { it >= 0 }
+                val isWord = step.kind == StepKind.WORD_JP || step.kind == StepKind.WORD_KR
+                when {
+                    speakerIdx != null && !isWord -> {   // 일본어 문장 + 한국어 해석 → 화자별
+                        val swap = pairVoiceSwap.getOrElse(step.sentenceIndex / 2) { false }
+                        speakerIdx + if (swap) 1 else 0
+                    }
+                    speakerIdx != null -> 0              // 대화의 단어 → 고정 목소리
+                    else -> step.sentenceIndex            // 일반 문장
+                }
             }
             val v = voices[idx % voices.size]
             if (v.name != appliedVoiceName) {

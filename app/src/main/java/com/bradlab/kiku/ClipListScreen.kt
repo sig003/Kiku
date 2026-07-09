@@ -182,7 +182,8 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("${clip.level} · ${clip.displayCategory()}", color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(clip.title, color = KikuColors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("${clip.sentences.size}문장 · ${clip.mode.description()}", color = KikuColors.textMuted, fontSize = 12.sp)
+            val unit = if (clip.mode == ClipMode.QUIZ) "문제" else "문장"
+            Text("${clip.sentences.size}$unit · ${clip.mode.description()}", color = KikuColors.textMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.size(8.dp))
         // 재생 원형 아이콘
@@ -201,6 +202,7 @@ private fun ClipMode.description(): String = when (this) {
     ClipMode.DRILL -> "한 문장 듣기"
     ClipMode.DIALOGUE -> "대화 듣기"
     ClipMode.LISTENING -> "청해 듣기"
+    ClipMode.QUIZ -> "즉시응답"
 }
 
 private val Color3A2E12 = androidx.compose.ui.graphics.Color(0xFF3A2E12)

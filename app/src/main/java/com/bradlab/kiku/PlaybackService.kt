@@ -17,6 +17,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaMetadata
+import android.media.SoundPool
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Binder
@@ -59,6 +60,12 @@ class PlaybackService : Service() {
     private var currentRandomLevel: String? = null   // 전체 랜덤의 레벨 필터(전체/N4/N3)
     private var lastSavedSentence = -1
 
+    // 딩동 효과음(퀴즈 반복 신호). SoundPool = 짧은 SFX 저지연 재생.
+    private var soundPool: SoundPool? = null
+    private var chimeSoundId = 0
+    private var chimeLoaded = false
+    private val chimeDurationMs = 950L   // chime.wav 길이(약 0.9초)에 맞춘 대기
+
     private val binder = LocalBinder()
     inner class LocalBinder : Binder() { fun service(): PlaybackService = this@PlaybackService }
 
@@ -86,7 +93,25 @@ class PlaybackService : Service() {
         super.onCreate()
         audioManager = getSystemService(AudioManager::class.java)
         tts = TextToSpeech(this) { status -> ttsReady.complete(status == TextToSpeech.SUCCESS) }
-        sequencer = TtsSequencer(tts, scope)
+        soundPool = SoundPool.Builder()
+            .setMaxStreams(1)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build()
+            )
+            .build()
+            .also { sp ->
+                sp.setOnLoadCompleteListener { _, _, status -> chimeLoaded = status == 0 }
+                chimeSoundId = sp.load(this, R.raw.chime, 1)
+            }
+        sequencer = TtsSequencer(tts, scope, playChime = {
+            soundPool?.takeIf { chimeLoaded }?.let {
+                it.play(chimeSoundId, 1f, 1f, 1, 0, 1f)
+                kotlinx.coroutines.delay(chimeDurationMs)
+            }
+        })
         setupMediaSession()
         ensureChannel()
         scope.launch {
@@ -440,6 +465,8 @@ class PlaybackService : Service() {
         unregisterNoisy()
         stopKeepAlive()
         abandonFocus()
+        soundPool?.release()
+        soundPool = null
         sequencer.release()
         mediaSession.release()
         scope.cancel()

@@ -71,7 +71,7 @@ class AssetClipRepository(
 
     private fun parse(fileName: String): Clip? = try {
         val text = context.assets.open("$dir/$fileName").bufferedReader().use { it.readText() }
-        json.decodeFromString<Clip>(text)
+        json.decodeFromString<Clip>(text).normalized()   // QUIZ 클립은 prompt로 sentences 파생
     } catch (e: Exception) {
         Log.w("KikuClips", "클립 파싱 실패: $dir/$fileName", e)
         null
