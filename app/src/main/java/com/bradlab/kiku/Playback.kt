@@ -233,26 +233,3 @@ private fun Clip.quizSteps(): List<PlaybackStep> {
 
 private const val OUTRO_JP = "聞き取りが終わりました。"
 private const val OUTRO_KR = "듣기가 끝났습니다."
-
-// ── 검증용 샘플 클립 (TODO 3에서 JSON으로 대체) ──────────────────────
-
-fun sampleDrillClip(): Clip = Clip(
-    id = 1,
-    category = "N4 회사생활",
-    title = "회의·전화·이메일",
-    mode = ClipMode.DRILL,
-    sentences = listOf(
-        Sentence(
-            id = 1, jp = "昨日は会社を休みました。", kr = "어제는 회사를 쉬었습니다.",
-            words = listOf(Word("昨日", "어제"), Word("会社", "회사"), Word("休む", "쉬다")),
-        ),
-        Sentence(
-            id = 2, jp = "今日はいい天気ですね。", kr = "오늘은 날씨가 좋네요.",
-            words = listOf(Word("今日", "오늘"), Word("天気", "날씨")),
-        ),
-        Sentence(
-            id = 3, jp = "電車に乗って学校へ行きます。", kr = "전철을 타고 학교에 갑니다.",
-            words = listOf(Word("電車", "전철"), Word("学校", "학교")),
-        ),
-    ),
-)
