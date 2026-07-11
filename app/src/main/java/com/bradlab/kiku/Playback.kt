@@ -92,6 +92,10 @@ data class PlaybackStep(
     val locale: Locale,
     val pauseAfterMs: Long = 0,
     val speaker: String? = null,   // QUIZ 음성 배역: "A"=질문, "B"=응답. 그 외 null(내레이터)
+    // QUIZ 전용 화면 표시 텍스트. null=화면 그대로 유지, ""=그 부분 비움, 값=그 텍스트로 표시.
+    // (DRILL/대화는 화면을 문장 단위로 그리므로 사용하지 않음.)
+    val showJp: String? = null,
+    val showKr: String? = null,
 )
 
 /** 한 문장 → 스텝 펼침. 펼치는 방식은 PlaybackPattern이 결정한다. */
@@ -204,8 +208,8 @@ private fun Clip.quizSteps(): List<PlaybackStep> {
         if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(pauseAfterMs = out.last().pauseAfterMs + extra)
     }
     quiz.forEachIndexed { i, q ->
-        out += PlaybackStep(i, StepKind.JP, "問題${i + 1}。", JA, pauseAfterMs = 1800)
-        // 1단계: 시험(전부 일본어)
+        // 1단계: 시험(전부 일본어). 화면엔 질문만 — 예문/정답은 귀로만(showJp/Kr 안 건드림).
+        out += PlaybackStep(i, StepKind.JP, "問題${i + 1}。", JA, pauseAfterMs = 1800, showJp = q.promptJp, showKr = "")
         out += PlaybackStep(i, StepKind.JP, q.promptJp, JA, pauseAfterMs = 1200, speaker = "A")
         q.options.forEachIndexed { k, o ->
             out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 250)
@@ -213,15 +217,15 @@ private fun Clip.quizSteps(): List<PlaybackStep> {
         }
         bumpLastPause(1500)   // 응답3 뒤 = 생각할 틈(총 2.7초)
         out += PlaybackStep(i, StepKind.JP, "正解は${q.answer}番です。", JA, pauseAfterMs = 900)
-        // 2단계: 복습(반복) — 딩동 신호 후 일본어 + 한국어 해석
+        // 2단계: 복습(반복) — 딩동 신호 후, 화면에 질문·예문·해석을 순차로 노출.
         out += PlaybackStep(i, StepKind.CHIME, "", JA, pauseAfterMs = 500)
-        out += PlaybackStep(i, StepKind.JP, q.promptJp, JA, pauseAfterMs = 1000, speaker = "A")
-        out += PlaybackStep(i, StepKind.KR, q.promptKr, KO, pauseAfterMs = 900)
+        out += PlaybackStep(i, StepKind.JP, q.promptJp, JA, pauseAfterMs = 1000, speaker = "A", showJp = q.promptJp, showKr = "")
+        out += PlaybackStep(i, StepKind.KR, q.promptKr, KO, pauseAfterMs = 900, showKr = q.promptKr)
         q.options.forEachIndexed { k, o ->
             out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 200)
-            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 1000, speaker = "B")
+            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 1000, speaker = "B", showJp = "${k + 1}. ${o.jp}", showKr = "")
             val kr = if (q.answer == k + 1) "${o.kr} (정답)" else o.kr
-            out += PlaybackStep(i, StepKind.KR, kr, KO, pauseAfterMs = 800)
+            out += PlaybackStep(i, StepKind.KR, kr, KO, pauseAfterMs = 800, showKr = kr)
         }
         bumpLastPause(1800)   // 문항 간 간격
     }

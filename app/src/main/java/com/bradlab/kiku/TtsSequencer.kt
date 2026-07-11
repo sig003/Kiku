@@ -83,7 +83,17 @@ class TtsSequencer(
             _state.update { it.copy(playing = true, finished = false) }
             while (currentStepIndex < steps.size) {
                 val step = steps[currentStepIndex]
-                _state.update { it.withSentence(step.sentenceIndex).copy(kind = step.kind) }
+                _state.update { st ->
+                    if (clip?.mode == ClipMode.QUIZ) {
+                        // QUIZ: 화면은 스텝의 showJp/showKr을 따라감(null=유지). speaker 배지는 숨김.
+                        var n = st.copy(sentenceIndex = step.sentenceIndex, kind = step.kind, speaker = null)
+                        step.showJp?.let { n = n.copy(sentenceJp = it, words = emptyList()) }
+                        step.showKr?.let { n = n.copy(sentenceKr = it) }
+                        n
+                    } else {
+                        st.withSentence(step.sentenceIndex).copy(kind = step.kind)
+                    }
+                }
                 if (step.kind == StepKind.CHIME) {
                     playChime?.invoke()   // 딩동 효과음 재생·대기 (음원 길이만큼)
                 } else {
