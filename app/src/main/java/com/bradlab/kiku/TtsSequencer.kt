@@ -217,13 +217,17 @@ class TtsSequencer(
     }
 
     /**
-     * 낭독용 텍스트 변환 — 문법 자리표시 물결표(～) 처리.
-     * 한국어 "～해요" → "무엇무엇 해요"(모국어라 패턴 힌트 자연스러움),
-     * 일본어 "～てください" → "てください"(초보엔 なになに가 오히려 헷갈려 그냥 제거, 화면 칩엔 ～ 보임).
+     * 낭독용 텍스트 변환.
+     *  - 문법 라벨 괄호만 제거: 단어 뜻의 "(피해수동)" 등이 음성으로 읽히지 않게(화면 칩엔 유지).
+     *    "(정답)"·"(남에게)"처럼 뜻에 필요한 괄호는 남긴다.
+     *  - 문법 자리표시 물결표(～): 한국어 "～해요" → "무엇무엇 해요"(패턴 힌트), 일본어는 그냥 제거.
      */
     private fun vocalize(text: String, locale: Locale): String {
         val placeholder = if (locale.language == Locale.KOREAN.language) "무엇무엇 " else ""
-        return text.replace("～", placeholder).replace("~", placeholder)
+        return text
+            .replace(GRAMMAR_LABEL, "")   // 문법 라벨 괄호만 제거
+            .replace("～", placeholder).replace("~", placeholder)
+            .replace(Regex("\\s{2,}"), " ").trim()
     }
 
     /** 상태에 현재 문장 내용(일/한/단어)을 채운다. */
@@ -238,6 +242,14 @@ class TtsSequencer(
         )
     }
 }
+
+/**
+ * 낭독 시 제거할 "문법 라벨 괄호" — 괄호 안에 문법 용어가 들어간 것만(예: "(피해수동)", "(겸양)").
+ * "(정답)"·"(남에게)"처럼 뜻에 필요한 괄호는 매칭 안 돼 그대로 읽힌다.
+ */
+private val GRAMMAR_LABEL = Regex(
+    "[（(][^）)]*(?:수동|사역|겸양|존경|겸손|경어|전문|양태|의지|추측|회상|가정|명령|자동사|타동사)[^）)]*[）)]"
+)
 
 /** 시퀀서가 노출하는 재생 상태 — UI는 이것만 구독해 그린다(§3 단방향). */
 data class PlayerUiState(

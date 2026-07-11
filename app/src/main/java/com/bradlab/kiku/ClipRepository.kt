@@ -55,7 +55,8 @@ class AssetClipRepository(
      */
     suspend fun randomClip(count: Int = 100, level: String? = null): Clip {
         val all = if (level == null || level == "전체") "전체" else level
-        val pool = clips().filter { all == "전체" || it.level == all }
+        // 랜덤은 단문(DRILL)만 — 대화/퀴즈는 맥락이 있어야 하므로 문장 단위로 섞으면 뜻이 깨진다.
+        val pool = clips().filter { (all == "전체" || it.level == all) && it.mode == ClipMode.DRILL }
         val picked = pool.flatMap { it.sentences }
             .shuffled()
             .take(count)

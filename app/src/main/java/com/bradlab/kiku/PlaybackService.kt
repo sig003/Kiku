@@ -64,7 +64,7 @@ class PlaybackService : Service() {
     private var soundPool: SoundPool? = null
     private var chimeSoundId = 0
     private var chimeLoaded = false
-    private val chimeDurationMs = 950L   // chime.wav 길이(약 0.9초)에 맞춘 대기
+    private val chimeDurationMs = 1400L   // dingdong.wav 길이(1.4초)에 맞춘 대기
 
     private val binder = LocalBinder()
     inner class LocalBinder : Binder() { fun service(): PlaybackService = this@PlaybackService }
@@ -104,7 +104,7 @@ class PlaybackService : Service() {
             .build()
             .also { sp ->
                 sp.setOnLoadCompleteListener { _, _, status -> chimeLoaded = status == 0 }
-                chimeSoundId = sp.load(this, R.raw.chime, 1)
+                chimeSoundId = sp.load(this, R.raw.dingdong, 1)
             }
         sequencer = TtsSequencer(tts, scope, playChime = {
             soundPool?.takeIf { chimeLoaded }?.let {

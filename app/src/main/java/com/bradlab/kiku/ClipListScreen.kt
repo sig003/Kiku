@@ -113,7 +113,7 @@ private fun BrandBar() {
 private fun HeroRandomCard(level: String, onClick: () -> Unit) {
     val all = level == "전체"
     val title = if (all) "전체 랜덤" else "$level 랜덤"
-    val subtitle = if (all) "모든 문장 랜덤 듣기" else "$level 문장만 랜덤 듣기"
+    val subtitle = if (all) "모든 한 문장 랜덤 듣기" else "$level 한 문장 랜덤 듣기"
     val cta = if (all) "▶ 100문장 시작" else "▶ $level 랜덤 시작"
     Box(
         Modifier
