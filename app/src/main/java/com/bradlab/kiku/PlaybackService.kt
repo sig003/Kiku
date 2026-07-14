@@ -139,7 +139,7 @@ class PlaybackService : Service() {
             currentShuffled = shuffle || clipId == AssetClipRepository.RANDOM_CLIP_ID
             val clip =
                 if (shuffle && clipId != AssetClipRepository.RANDOM_CLIP_ID)
-                    base.copy(sentences = base.sentences.shuffled())
+                    base.blockShuffled()
                 else base
             // 순차·실제 클립이면 저장된 위치 복원
             val start = if (!currentShuffled && clip.id >= 1) progress.getInt("pos_${clip.id}", 0) else 0
@@ -165,7 +165,7 @@ class PlaybackService : Service() {
                     else repo.clip(id) ?: return@launch
                 currentShuffled = true
                 val clip = if (id != AssetClipRepository.RANDOM_CLIP_ID)
-                    base.copy(sentences = base.sentences.shuffled()) else base
+                    base.blockShuffled() else base
                 lastSavedSentence = -1
                 sequencer.pause()
                 sequencer.load(clip, 0, shuffled = true)

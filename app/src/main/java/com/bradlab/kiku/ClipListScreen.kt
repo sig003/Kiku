@@ -168,8 +168,8 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Text(art.kanji, color = KikuColors.text, fontSize = 22.sp, fontWeight = FontWeight.Black)
-            // 대화 클립이면 "2명" 표시(우하단 배지)
-            if (clip.mode == ClipMode.DIALOGUE) {
+            // 대화·실전청해(남/여 대화) 클립이면 "2명" 표시(우하단 배지)
+            if (clip.mode == ClipMode.DIALOGUE || clip.mode == ClipMode.LISTENING) {
                 Box(
                     Modifier.align(Alignment.BottomEnd).size(22.dp)
                         .clip(RoundedCornerShape(topStart = 10.dp, bottomEnd = 14.dp))
@@ -182,7 +182,7 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("${clip.level} · ${clip.displayCategory()}", color = KikuColors.textFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(clip.title, color = KikuColors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val unit = if (clip.mode == ClipMode.QUIZ) "문제" else "문장"
+            val unit = if (clip.mode == ClipMode.QUIZ || clip.mode == ClipMode.LISTENING) "문제" else "문장"
             Text("${clip.sentences.size}$unit · ${clip.mode.description()}", color = KikuColors.textMuted, fontSize = 12.sp)
         }
         Spacer(Modifier.size(8.dp))
@@ -201,7 +201,7 @@ private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
 private fun ClipMode.description(): String = when (this) {
     ClipMode.DRILL -> "한 문장 듣기"
     ClipMode.DIALOGUE -> "대화 듣기"
-    ClipMode.LISTENING -> "청해 듣기"
+    ClipMode.LISTENING -> "실전 청해"
     ClipMode.QUIZ -> "즉시응답"
 }
 

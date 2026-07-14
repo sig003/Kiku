@@ -157,6 +157,7 @@ fun PlayerScreen(clipId: Int, shuffle: Boolean, fresh: Boolean, randomLevel: Str
             Spacer(Modifier.height(16.dp))
             // 컨트롤 — 셔플 · 이전 · 재생 · 다음 · 다시듣기 (뮤직플레이어 배열)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // 셔플 — 모드별 블록 단위로 섞음(대화=A/B 짝, 퀴즈·실전청해=문항, 단문=문장).
                 Box(
                     Modifier.size(44.dp).clip(CircleShape).background(KikuColors.surface)
                         .clickable { service?.setShuffle(!ui.shuffled) },

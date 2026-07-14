@@ -38,7 +38,26 @@ data class Clip(
     val pattern: PlaybackPattern? = null,         // 클립 전체 커스텀 (있으면 mode 덮어씀)
     val sentences: List<Sentence> = emptyList(),
     val quiz: List<QuizItem> = emptyList(),       // QUIZ 모드(즉시응답) 전용 문항
+    val listening: List<ListeningItem> = emptyList(), // LISTENING 모드(실전 청해) 전용 문항
 )
+
+/**
+ * 실전 청해 문항 — JLPT 청해 課題理解/ポイント理解 유형(問題1·2).
+ * [상황][본문 대화][문제]를 듣고, [options] 중 알맞은 것([answer], 1-based)을 고른다.
+ */
+@Serializable
+data class ListeningItem(
+    val id: Int,
+    val setupJp: String, val setupKr: String,       // 상황 안내
+    val passage: List<Line>,                        // 본문(대화/모놀로그)
+    val questionJp: String, val questionKr: String, // 문제
+    val options: List<Word>,                        // 선택지(보통 4개)
+    val answer: Int,                                // 정답 번호(1~4)
+)
+
+/** 청해 본문 한 줄 — 화자(A/B)별 목소리. */
+@Serializable
+data class Line(val speaker: String? = null, val jp: String, val kr: String)
 
 /**
  * 즉시응답(即時応答) 문항 — JLPT 청해 유형(N3 문제5 / N4 문제4).
@@ -123,14 +142,33 @@ fun Sentence.toSteps(index: Int, p: PlaybackPattern): List<PlaybackStep> = build
  * QUIZ 클립은 sentences가 없어도 되므로, 재생/내비게이션용으로 문항 prompt를 문장으로 파생한다.
  * (sentences.size = 문항 수 → totalSentences·다음/이전·화면 표시가 그대로 동작)
  */
-fun Clip.normalized(): Clip =
-    if (mode == ClipMode.QUIZ && sentences.isEmpty() && quiz.isNotEmpty())
+fun Clip.normalized(): Clip = when {
+    mode == ClipMode.QUIZ && sentences.isEmpty() && quiz.isNotEmpty() ->
         copy(sentences = quiz.map { Sentence(id = it.id, speaker = "A", jp = it.promptJp, kr = it.promptKr) })
-    else this
+    mode == ClipMode.LISTENING && sentences.isEmpty() && listening.isNotEmpty() ->
+        copy(sentences = listening.map { Sentence(id = it.id, jp = it.setupJp, kr = it.setupKr) })
+    else -> this
+}
+
+/**
+ * 셔플 — 모드별 "블록" 단위로 섞는다(맥락 유지).
+ * 대화=A/B 짝, 퀴즈·실전청해=문항, 그 외(단문)=문장 낱개.
+ */
+fun Clip.blockShuffled(): Clip = when {
+    mode == ClipMode.QUIZ && quiz.isNotEmpty() ->
+        copy(quiz = quiz.shuffled(), sentences = emptyList()).normalized()
+    mode == ClipMode.LISTENING && listening.isNotEmpty() ->
+        copy(listening = listening.shuffled(), sentences = emptyList()).normalized()
+    mode == ClipMode.DIALOGUE ->
+        copy(sentences = sentences.chunked(2).shuffled().flatten())
+    else ->
+        copy(sentences = sentences.shuffled())
+}
 
 /** 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 끊김 없이 연속 재생. */
 fun Clip.toSteps(): List<PlaybackStep> {
     if (mode == ClipMode.QUIZ) return quizSteps()
+    if (mode == ClipMode.LISTENING && listening.isNotEmpty()) return listeningSteps()
     if (sentences.isEmpty()) return emptyList()
     // 대화는 (A질문 + B답변)을 한 세트로 묶어 주고받기, 그 외는 문장별 드릴.
     val body = if (mode == ClipMode.DIALOGUE) dialogueSteps() else drillSteps()
@@ -230,6 +268,59 @@ private fun Clip.quizSteps(): List<PlaybackStep> {
         bumpLastPause(1800)   // 문항 간 간격
     }
     val last = (quiz.size - 1).coerceAtLeast(0)
+    out += PlaybackStep(last, StepKind.JP, OUTRO_JP, JA, pauseAfterMs = 400)
+    out += PlaybackStep(last, StepKind.KR, OUTRO_KR, KO)
+    return out
+}
+
+/**
+ * 실전 청해(LISTENING) 평탄화 — 문항마다 "시험(전부 일본어) → 정답 → 해설(한국어)".
+ *
+ * [問題N] 상황 → 본문대화(화자별) → 문제 → 선택지1~4 → (생각) → 딩동 → "正解はN番です"
+ *        → (해설) 상황해석 → 본문 줄마다 일→한 → 문제해석 → 선택지 한국어(정답 표시)
+ * 음성: 본문 화자=A/B, 그 외(상황·문제·선택지·정답)=내레이터(슬롯0).
+ */
+private fun Clip.listeningSteps(): List<PlaybackStep> {
+    val JA = Locale.JAPANESE; val KO = Locale.KOREAN
+    val out = ArrayList<PlaybackStep>()
+    fun bump(extra: Long) { if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(pauseAfterMs = out.last().pauseAfterMs + extra) }
+    listening.forEachIndexed { i, item ->
+        // ── 1단계: 시험 (전부 일본어) ──
+        out += PlaybackStep(i, StepKind.JP, "問題${i + 1}。", JA, pauseAfterMs = 2200, showJp = item.setupJp, showKr = "")
+        out += PlaybackStep(i, StepKind.JP, item.setupJp, JA, pauseAfterMs = 1000, showJp = item.setupJp)
+        out += PlaybackStep(i, StepKind.JP, item.questionJp, JA, pauseAfterMs = 2000, showJp = item.questionJp)   // 문제 먼저(뭘 들을지 알고 듣게 — 실전 방식)
+        item.passage.forEach { line ->
+            out += PlaybackStep(i, StepKind.JP, line.jp, JA, pauseAfterMs = 700, speaker = line.speaker, showJp = line.jp)
+        }
+        bump(800)   // 본문 끝 → 문제 다시 사이 여유(0.7→1.5초)
+        out += PlaybackStep(i, StepKind.JP, item.questionJp, JA, pauseAfterMs = 1900, showJp = item.questionJp)   // 문제 다시
+        item.options.forEachIndexed { k, o ->
+            out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 250, showJp = "${k + 1}. ${o.jp}")
+            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 900)
+        }
+        bump(2000)   // 생각할 틈
+        out += PlaybackStep(i, StepKind.CHIME, "", JA, pauseAfterMs = 500)
+        out += PlaybackStep(i, StepKind.JP, "正解は${item.answer}番です。", JA, pauseAfterMs = 2800, showJp = "正解: ${item.answer}番")
+        // ── 2단계: 해설 — 1단계와 같은 구조(상황→문제→본문→문제→선택지), 각 항목 일본어→한국어 ──
+        out += PlaybackStep(i, StepKind.JP, item.setupJp, JA, pauseAfterMs = 700, showJp = item.setupJp, showKr = "")
+        out += PlaybackStep(i, StepKind.KR, item.setupKr, KO, pauseAfterMs = 900, showKr = item.setupKr)
+        out += PlaybackStep(i, StepKind.JP, item.questionJp, JA, pauseAfterMs = 700, showJp = item.questionJp, showKr = "")
+        out += PlaybackStep(i, StepKind.KR, item.questionKr, KO, pauseAfterMs = 1000, showKr = item.questionKr)   // 문제(앞)
+        item.passage.forEach { line ->
+            out += PlaybackStep(i, StepKind.JP, line.jp, JA, pauseAfterMs = 700, speaker = line.speaker, showJp = line.jp, showKr = "")
+            out += PlaybackStep(i, StepKind.KR, line.kr, KO, pauseAfterMs = 700, speaker = line.speaker, showKr = line.kr)
+        }
+        out += PlaybackStep(i, StepKind.JP, item.questionJp, JA, pauseAfterMs = 700, showJp = item.questionJp, showKr = "")
+        out += PlaybackStep(i, StepKind.KR, item.questionKr, KO, pauseAfterMs = 1000, showKr = item.questionKr)   // 문제(뒤)
+        item.options.forEachIndexed { k, o ->
+            val kr = if (item.answer == k + 1) "${o.kr} (정답)" else o.kr
+            out += PlaybackStep(i, StepKind.JP, "${k + 1}", JA, pauseAfterMs = 200, showJp = "${k + 1}. ${o.jp}", showKr = "")
+            out += PlaybackStep(i, StepKind.JP, o.jp, JA, pauseAfterMs = 700, showJp = "${k + 1}. ${o.jp}")
+            out += PlaybackStep(i, StepKind.KR, kr, KO, pauseAfterMs = 600, showKr = "${k + 1}. $kr")
+        }
+        bump(1800)   // 문항 간 간격
+    }
+    val last = (listening.size - 1).coerceAtLeast(0)
     out += PlaybackStep(last, StepKind.JP, OUTRO_JP, JA, pauseAfterMs = 400)
     out += PlaybackStep(last, StepKind.KR, OUTRO_KR, KO)
     return out
