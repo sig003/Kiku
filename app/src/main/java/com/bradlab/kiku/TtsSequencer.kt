@@ -100,7 +100,11 @@ class TtsSequencer(
                 } else {
                     if (speed != appliedRate) { tts.setSpeechRate(speed); appliedRate = speed }    // 속도 바뀔 때만
                     applyVoice(step)   // 문장 홀짝으로 목소리 번갈아(+언어), 바뀔 때만 재설정
-                    tts.speakAndAwait(vocalize(step.text, step.locale)) // onDone까지 대기 (§2.4)
+                    val say = vocalize(step.text, step.locale)
+                    // 워치독: 화면오프 등에서 엔진이 onDone을 안 주면 루프가 영구 정지한다.
+                    // 문장 길이·속도로 넉넉한 상한을 잡아, 초과하면 stop 후 다음 스텝으로 자동 진행.
+                    val budget = ((4000L + say.length * 320L) / speed).toLong().coerceIn(6000L, 40000L)
+                    kotlinx.coroutines.withTimeoutOrNull(budget) { tts.speakAndAwait(say) } // onDone까지 대기 (§2.4)
                 }
                 if (step.pauseAfterMs > 0) delay(step.pauseAfterMs)
                 currentStepIndex++

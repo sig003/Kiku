@@ -54,6 +54,7 @@ class PlaybackService : Service() {
     private val repo by lazy { AssetClipRepository(applicationContext) }
     private val progress by lazy { getSharedPreferences("kiku_progress", MODE_PRIVATE) }
     private var focusRequest: AudioFocusRequest? = null
+    private var resumeOnFocusGain = false    // 일시적 포커스 상실(전화·알림)로 멈췄으면 되돌아올 때 자동 재개
     private var noisyRegistered = false
     private var active = false   // 세션 진행 중(알림 표시 중) 여부
     private var currentShuffled = false      // 랜덤/셔플 재생이면 위치 저장 안 함
@@ -82,10 +83,19 @@ class PlaybackService : Service() {
 
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
-            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS -> {   // 영구 상실(타 미디어앱 재생 등) → 정지 유지
+                resumeOnFocusGain = false
+                pause()
+            }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> pause()  // 전화/타앱 소리 → 정지
-            // 음성 학습이라 GAIN 시 자동 재개는 생략(사용자가 직접 재생)
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {   // 전화·알림 등 일시적 → 끝나면 재개
+                // 음성 학습이라 덕킹(소리 줄이고 겹쳐 재생)은 부적절 → 일시정지 후 복귀 시 자동 재개.
+                resumeOnFocusGain = state.value.playing
+                pause()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {   // 방해 요소 종료 → 우리가 멈췄던 거면 자동 재개
+                if (resumeOnFocusGain) { resumeOnFocusGain = false; play() }
+            }
         }
     }
 
@@ -212,6 +222,7 @@ class PlaybackService : Service() {
     fun playPause() { if (state.value.playing) pause() else play() }
 
     fun play() {
+        resumeOnFocusGain = false   // 명시적 재생 → 대기 중이던 자동 재개 플래그 정리
         if (!requestFocus()) return
         // started 서비스로 승격 → 화면이 언바인드해도 생존
         startService(Intent(this, PlaybackService::class.java))
@@ -243,6 +254,7 @@ class PlaybackService : Service() {
     fun setSpeed(value: Float) = sequencer.setSpeed(value)
 
     private fun stopPlayback() {
+        resumeOnFocusGain = false
         sequencer.pause()
         stopKeepAlive()
         unregisterNoisy()
