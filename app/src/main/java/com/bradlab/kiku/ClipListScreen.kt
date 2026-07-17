@@ -115,6 +115,8 @@ private fun HeroRandomCard(level: String, onClick: () -> Unit) {
     val title = if (all) "전체 랜덤" else "$level 랜덤"
     val subtitle = if (all) "모든 한 문장 랜덤 듣기" else "$level 한 문장 랜덤 듣기"
     val cta = if (all) "▶ 100문장 시작" else "▶ $level 랜덤 시작"
+    val (jlptLabel, dday) = remember { nextJlpt() }
+    val ddayText = if (dday == 0L) "JLPT $jlptLabel D-DAY" else "JLPT $jlptLabel D-$dday"
     Box(
         Modifier
             .fillMaxWidth()
@@ -124,6 +126,16 @@ private fun HeroRandomCard(level: String, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(20.dp),
     ) {
+        // 우상단 JLPT D-day 칩 — 다음 시험(7월·12월 첫 일요일)까지 남은 일수
+        Box(
+            Modifier.align(Alignment.TopEnd)
+                .clip(RoundedCornerShape(8.dp))
+                .background(KikuColors.bg.copy(alpha = 0.5f))
+                .border(1.dp, KikuColors.goldBorder, RoundedCornerShape(8.dp))
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
+            Text(ddayText, color = KikuColors.gold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.3.sp)
+        }
         // 우하단 셔플 장식
         Icon(
             painterResource(R.drawable.ic_shuffle),
@@ -207,3 +219,22 @@ private fun ClipMode.description(): String = when (this) {
 
 private val Color3A2E12 = androidx.compose.ui.graphics.Color(0xFF3A2E12)
 private val Color171821 = androidx.compose.ui.graphics.Color(0xFF171821)
+
+/**
+ * 다음 JLPT 시험 회차와 D-n. JLPT은 매년 7월·12월 "첫째 주 일요일"에 치른다.
+ * 서버 없이 기기 날짜로만 계산한다(회차 label, 남은 일수).
+ */
+private fun nextJlpt(today: java.time.LocalDate = java.time.LocalDate.now()): Pair<String, Long> {
+    fun firstSunday(year: Int, month: Int): java.time.LocalDate {
+        val first = java.time.LocalDate.of(year, month, 1)
+        val shift = (7 - first.dayOfWeek.value % 7) % 7   // 1일이 무슨 요일이든 그 달 첫 일요일까지
+        return first.plusDays(shift.toLong())
+    }
+    val y = today.year
+    val upcoming = listOf(
+        "7월" to firstSunday(y, 7),
+        "12월" to firstSunday(y, 12),
+        "7월" to firstSunday(y + 1, 7),   // 12월도 지났으면 내년 7월
+    ).first { !it.second.isBefore(today) }
+    return upcoming.first to java.time.temporal.ChronoUnit.DAYS.between(today, upcoming.second)
+}
