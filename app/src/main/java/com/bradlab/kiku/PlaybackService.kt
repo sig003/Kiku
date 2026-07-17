@@ -54,6 +54,7 @@ class PlaybackService : Service() {
     private val repo by lazy { AssetClipRepository(applicationContext) }
     private val progress by lazy { getSharedPreferences("kiku_progress", MODE_PRIVATE) }
     private var focusRequest: AudioFocusRequest? = null
+    private var hasFocus = false             // 현재 오디오 포커스 보유 여부(중복 요청·누수 방지)
     private var resumeOnFocusGain = false    // 일시적 포커스 상실(전화·알림)로 멈췄으면 되돌아올 때 자동 재개
     private var noisyRegistered = false
     private var active = false   // 세션 진행 중(알림 표시 중) 여부
@@ -84,16 +85,19 @@ class PlaybackService : Service() {
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {   // 영구 상실(타 미디어앱 재생 등) → 정지 유지
+                hasFocus = false                // 다음 재생 땐 새로 요청해야 함
                 resumeOnFocusGain = false
                 pause()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {   // 전화·알림 등 일시적 → 끝나면 재개
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {   // 전화·알림·화면잠금 등 일시적 → 끝나면 재개
                 // 음성 학습이라 덕킹(소리 줄이고 겹쳐 재생)은 부적절 → 일시정지 후 복귀 시 자동 재개.
+                // 포커스는 계속 보유(hasFocus 유지) — 곧 오는 GAIN에서 우리가 재개한다.
                 resumeOnFocusGain = state.value.playing
                 pause()
             }
             AudioManager.AUDIOFOCUS_GAIN -> {   // 방해 요소 종료 → 우리가 멈췄던 거면 자동 재개
+                hasFocus = true
                 if (resumeOnFocusGain) { resumeOnFocusGain = false; play() }
             }
         }
@@ -318,22 +322,29 @@ class PlaybackService : Service() {
 
     // ── AudioFocus ──────────────────────────────────────────────
 
+    // 오디오 포커스 요청은 "한 번만" 만들어 재사용한다.
+    // (예전 버그) play()마다 새 AudioFocusRequest를 요청하면, 일시정지 땐 포커스를 반납하지 않으므로
+    // 앞 요청이 안 버려진 채 새 요청이 쌓인다. 그 상태에서 화면잠금 등 일시적 상실(TRANSIENT)이 오면
+    // 뒤따르는 복귀(GAIN)가 유령이 된 요청으로 라우팅돼 자동 재개가 안 되고 멈춘 채로 남는다.
     private fun requestFocus(): Boolean {
-        val attrs = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-            .build()
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-            .setAudioAttributes(attrs)
+        if (hasFocus) return true   // 이미 보유(일시정지 후 재개 등) → 중복 요청 금지
+        val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
             .setOnAudioFocusChangeListener(focusListener)
             .build()
-        focusRequest = req
-        return audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            .also { focusRequest = it }
+        hasFocus = audioManager.requestAudioFocus(req) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        return hasFocus
     }
 
     private fun abandonFocus() {
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
-        focusRequest = null
+        hasFocus = false
     }
 
     private fun registerNoisy() {
