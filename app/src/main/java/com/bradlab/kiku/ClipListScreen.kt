@@ -46,6 +46,7 @@ fun ClipListScreen(onOpen: (Int, Boolean, String?) -> Unit, bottomPadding: andro
     }
     var filter by remember { mutableStateOf("전체") }   // 전체 / N4 / N3
     val shown = clips.filter { filter == "전체" || it.level == filter }
+    val cultureClips = clips.filter { it.mode == ClipMode.CULTURE }
 
     Column(
         modifier = Modifier
@@ -57,6 +58,11 @@ fun ClipListScreen(onOpen: (Int, Boolean, String?) -> Unit, bottomPadding: andro
     ) {
         BrandBar()
         Spacer(Modifier.height(20.dp))
+        // A안: 🍙 일본 한입(위) + 🔀 전체 랜덤(아래) 히어로 2개. 한입 클립 있을 때만 노출.
+        if (cultureClips.isNotEmpty()) {
+            CultureHero(onClick = { onOpen(cultureClips.random().id, false, null) })
+            Spacer(Modifier.height(14.dp))
+        }
         HeroRandomCard(level = filter, onClick = { onOpen(AssetClipRepository.RANDOM_CLIP_ID, false, filter) })
         Spacer(Modifier.height(20.dp))
         LevelFilter(selected = filter, onSelect = { filter = it })
@@ -165,6 +171,36 @@ private fun HeroRandomCard(level: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun CultureHero(onClick: () -> Unit) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(Brush.radialGradient(listOf(CultureHeroTop, Color171821)))
+            .border(1.dp, KikuColors.goldBorder, RoundedCornerShape(22.dp))
+            .clickable(onClick = onClick)
+            .padding(20.dp),
+    ) {
+        Text("🍙", fontSize = 60.sp, modifier = Modifier.align(Alignment.BottomEnd))
+        Column {
+            Text("🍙 일본 한입", color = KikuColors.gold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.9.sp)
+            Spacer(Modifier.height(8.dp))
+            Text("오늘의 한 편", color = KikuColors.text, fontSize = 23.sp, fontWeight = FontWeight.ExtraBold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "일본이 궁금해지는 3분 — 듣다 보면 일본어까지",
+                color = KikuColors.textMuted, fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth(0.82f),
+            )
+            Spacer(Modifier.height(14.dp))
+            Box(
+                Modifier.clip(RoundedCornerShape(999.dp)).background(KikuColors.gold).padding(horizontal = 18.dp, vertical = 10.dp),
+            ) { Text("▶ 랜덤 재생", color = KikuColors.bg, fontSize = 14.sp, fontWeight = FontWeight.ExtraBold) }
+        }
+    }
+}
+
+@Composable
 private fun CollectionRow(clip: Clip, onOpen: (Int, Boolean, String?) -> Unit) {
     val art = clipArt(clip)
     Row(
@@ -215,10 +251,12 @@ private fun ClipMode.description(): String = when (this) {
     ClipMode.DIALOGUE -> "대화 듣기"
     ClipMode.LISTENING -> "실전 청해"
     ClipMode.QUIZ -> "즉시응답"
+    ClipMode.CULTURE -> "일본 한입"
 }
 
 private val Color3A2E12 = androidx.compose.ui.graphics.Color(0xFF3A2E12)
 private val Color171821 = androidx.compose.ui.graphics.Color(0xFF171821)
+private val CultureHeroTop = androidx.compose.ui.graphics.Color(0xFF5A2323)   // 일본 한입 히어로 상단(따뜻한 적)
 
 /**
  * 다음 JLPT 시험 회차와 D-n. JLPT은 매년 7월·12월 "첫째 주 일요일"에 치른다.

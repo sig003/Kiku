@@ -1,5 +1,6 @@
 package com.bradlab.kiku
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.Locale
 
@@ -39,6 +40,50 @@ data class Clip(
     val sentences: List<Sentence> = emptyList(),
     val quiz: List<QuizItem> = emptyList(),       // QUIZ 모드(즉시응답) 전용 문항
     val listening: List<ListeningItem> = emptyList(), // LISTENING 모드(실전 청해) 전용 문항
+    val hook: Hook? = null,                       // CULTURE(일본 한입) 도입 훅
+    val content: CultureContent? = null,          // CULTURE 본문(나레이션·단어·문법·표현·드릴)
+)
+
+// ── 일본 한입(CULTURE) 모델 — 로드맵 ⑩ ─────────────────────────────
+// 일본 문화/상식을 "왜?"로 짧게 → 일본어 나레이션(중간 리콜) → 한국어 해설 → 단어·문법·표현 → 실전 대화.
+
+/** 도입 훅. type=WHY/REALLY/HOW/TOP3…(필터·추천용). kr=호기심 훅(길어도 됨), jp=일본어 한 줄(선택). */
+@Serializable
+data class Hook(val type: String = "WHY", val kr: String = "", val jp: String = "")
+
+/** 나레이션 중간 능동 복습 — 질문(일본어) → 틈 → 답(한국어). */
+@Serializable
+data class Recall(val jp: String, val kr: String)
+
+/** 나레이션 한 줄 — 일본어가 주, 한국어(kr)는 자막용(음성 off). recall 있으면 그 뒤 리콜. */
+@Serializable
+data class Narration(val speaker: String = "N", val jp: String, val kr: String, val recall: Recall? = null)
+
+/** 단어 — reading(후리가나)은 화면용, 음성은 jp/kr만. */
+@Serializable
+data class CultureWord(val jp: String, val reading: String = "", val kr: String)
+
+/** 문법 한 항목 — 제목·뜻 + 예문(jp/kr). */
+@Serializable
+data class GrammarNote(val title: String, val meaning: String, val example: Line)
+
+/** 오늘 바로 써먹는 표현 한 문장. */
+@Serializable
+data class Phrase(val jp: String, val kr: String)
+
+/** 끝에 이어 듣는 실전 대화 참조 — 기존 대화 클립을 clipId로 가리킴(콘텐츠 중복 안 만듦). */
+@Serializable
+data class DrillRef(val level: String = "N4", val mode: String = "DIALOGUE", val clipId: Int = -1, val title: String = "")
+
+/** CULTURE 본문. */
+@Serializable
+data class CultureContent(
+    val narration: List<Narration> = emptyList(),
+    @SerialName("summary_kr") val summaryKr: String = "",
+    val words: List<CultureWord> = emptyList(),
+    val grammar: List<GrammarNote> = emptyList(),
+    val phrase: Phrase? = null,
+    val drill: DrillRef? = null,
 )
 
 /**
@@ -75,7 +120,7 @@ data class QuizItem(
 // ── 재생 패턴 프리셋 (§2.7) ───────────────────────────────────────
 
 @Serializable
-enum class ClipMode { DRILL, DIALOGUE, LISTENING, QUIZ }
+enum class ClipMode { DRILL, DIALOGUE, LISTENING, QUIZ, CULTURE }
 
 @Serializable
 data class PlaybackPattern(
@@ -94,6 +139,7 @@ fun ClipMode.toPattern(): PlaybackPattern = when (this) {
     ClipMode.DIALOGUE  -> PlaybackPattern(jpRepeat = 3, pauseBetweenRepeatsMs = 2200, pauseAfterJpMs = 3000, readKr = true,  pauseAfterKrMs = 800, jpRepeatAfterKr = 1, readWords = true,  pauseBetweenSentencesMs = 2000)
     ClipMode.LISTENING -> PlaybackPattern(jpRepeat = 1, pauseBetweenRepeatsMs = 0,    pauseAfterJpMs = 0,    readKr = false, pauseAfterKrMs = 0,   jpRepeatAfterKr = 0, readWords = false, pauseBetweenSentencesMs = 800)
     ClipMode.QUIZ      -> PlaybackPattern()   // 미사용 — quizSteps()가 직접 스텝을 구성
+    ClipMode.CULTURE   -> PlaybackPattern()   // 미사용 — cultureSteps()가 직접 스텝을 구성
 }
 
 /** 클립이 실제로 쓰는 패턴: 커스텀 pattern이 있으면 그것, 없으면 mode 프리셋. */
@@ -147,6 +193,8 @@ fun Clip.normalized(): Clip = when {
         copy(sentences = quiz.map { Sentence(id = it.id, speaker = "A", jp = it.promptJp, kr = it.promptKr) })
     mode == ClipMode.LISTENING && sentences.isEmpty() && listening.isNotEmpty() ->
         copy(sentences = listening.map { Sentence(id = it.id, jp = it.setupJp, kr = it.setupKr) })
+    mode == ClipMode.CULTURE && sentences.isEmpty() && content != null ->
+        copy(sentences = content.narration.mapIndexed { i, n -> Sentence(id = i + 1, jp = n.jp, kr = n.kr) })
     else -> this
 }
 
@@ -161,12 +209,14 @@ fun Clip.blockShuffled(): Clip = when {
         copy(listening = listening.shuffled(), sentences = emptyList()).normalized()
     mode == ClipMode.DIALOGUE ->
         copy(sentences = sentences.chunked(2).shuffled().flatten())
+    mode == ClipMode.CULTURE -> this   // 한입은 훅→나레이션→해설 순서가 스토리 → 셔플 안 함
     else ->
         copy(sentences = sentences.shuffled())
 }
 
 /** 클립 전체 → 모든 문장의 스텝을 하나로 펼침 → 끊김 없이 연속 재생. */
 fun Clip.toSteps(): List<PlaybackStep> {
+    if (mode == ClipMode.CULTURE) return cultureSteps()
     if (mode == ClipMode.QUIZ) return quizSteps()
     if (mode == ClipMode.LISTENING && listening.isNotEmpty()) return listeningSteps()
     if (sentences.isEmpty()) return emptyList()
@@ -326,5 +376,81 @@ private fun Clip.listeningSteps(): List<PlaybackStep> {
     return out
 }
 
+/**
+ * 일본 한입(CULTURE) 평탄화 — 로드맵 ⑩ "몰입식".
+ *
+ * 훅(한국어) → 나레이션(일본어 흐름, 문장별 kr은 자막만·음성 off, recall은 질문jp→틈→답kr)
+ *   → 한국어 해설(summary) → 단어(일→한) → 문법(뜻kr + 예문 일→한) → 오늘의 표현(일→한)
+ *   → 이어서 실전 대화 안내(핸드오프는 안내만; 자동 로드는 후속 과제).
+ * 화면은 QUIZ/LISTENING처럼 showJp/showKr을 따라간다. 음성 배역은 내레이터(speaker="N"→슬롯0) 고정.
+ */
+private fun Clip.cultureSteps(): List<PlaybackStep> {
+    val JA = Locale.JAPANESE; val KO = Locale.KOREAN
+    val c = content ?: return emptyList()
+    val out = ArrayList<PlaybackStep>()
+    val lastIdx = (c.narration.size - 1).coerceAtLeast(0)
+
+    // ── 훅(한국어) — 화면엔 일본어 훅(없으면 제목) + 한국어 훅 ──
+    hook?.let { h ->
+        out += PlaybackStep(0, StepKind.KR, h.kr, KO, pauseAfterMs = 900, speaker = "N",
+            showJp = h.jp.ifEmpty { title }, showKr = h.kr)
+    }
+
+    // ── 나레이션(일본어 흐름). 문장별 kr은 자막만(음성 off). 리콜만 소리로. ──
+    c.narration.forEachIndexed { i, n ->
+        out += PlaybackStep(i, StepKind.JP, n.jp, JA, pauseAfterMs = 700, speaker = "N",
+            showJp = n.jp, showKr = n.kr)
+        n.recall?.let { r ->
+            out += PlaybackStep(i, StepKind.JP, r.jp, JA, pauseAfterMs = 1200, speaker = "N",
+                showJp = r.jp, showKr = "")            // 질문 → 1초 틈
+            out += PlaybackStep(i, StepKind.KR, r.kr, KO, pauseAfterMs = 700, speaker = "N",
+                showKr = r.kr)                          // 답
+        }
+    }
+
+    // ── 한국어 해설(요약) ──
+    if (c.summaryKr.isNotEmpty()) {
+        out += PlaybackStep(lastIdx, StepKind.KR, c.summaryKr, KO, pauseAfterMs = 1000, speaker = "N",
+            showJp = "정리", showKr = c.summaryKr)
+    }
+
+    // ── 단어(일→한) ──
+    c.words.forEach { w ->
+        out += PlaybackStep(lastIdx, StepKind.WORD_JP, w.jp, JA, pauseAfterMs = 200, speaker = "N",
+            showJp = w.jp, showKr = w.kr)
+        out += PlaybackStep(lastIdx, StepKind.WORD_KR, w.kr, KO, pauseAfterMs = 500, speaker = "N",
+            showKr = w.kr)
+    }
+
+    // ── 문법(뜻kr + 예문 일→한) ──
+    c.grammar.forEach { g ->
+        out += PlaybackStep(lastIdx, StepKind.KR, "${g.title}。${g.meaning}", KO, pauseAfterMs = 600, speaker = "N",
+            showJp = g.title, showKr = g.meaning)
+        out += PlaybackStep(lastIdx, StepKind.JP, g.example.jp, JA, pauseAfterMs = 500, speaker = "N",
+            showJp = g.example.jp, showKr = g.example.kr)
+        out += PlaybackStep(lastIdx, StepKind.KR, g.example.kr, KO, pauseAfterMs = 800, speaker = "N",
+            showKr = g.example.kr)
+    }
+
+    // ── 오늘 바로 써먹는 표현(일→한) ──
+    c.phrase?.let { p ->
+        out += PlaybackStep(lastIdx, StepKind.KR, PHRASE_INTRO_KR, KO, pauseAfterMs = 500, speaker = "N",
+            showJp = "오늘 바로 써먹는 표현", showKr = PHRASE_INTRO_KR)
+        out += PlaybackStep(lastIdx, StepKind.JP, p.jp, JA, pauseAfterMs = 700, speaker = "N",
+            showJp = p.jp, showKr = p.kr)
+        out += PlaybackStep(lastIdx, StepKind.KR, p.kr, KO, pauseAfterMs = 900, speaker = "N",
+            showKr = p.kr)
+    }
+
+    // ── 이어서: 실전 대화 안내(안내만; 자동 로드는 후속) ──
+    c.drill?.let { d ->
+        val t = d.title.ifEmpty { "실전 대화" }
+        out += PlaybackStep(lastIdx, StepKind.KR, "이어서 실전 대화, ‘$t’ 를 들어보세요.", KO, pauseAfterMs = 300, speaker = "N",
+            showJp = "▶ ${d.level} 대화", showKr = t)
+    }
+    return out
+}
+
+private const val PHRASE_INTRO_KR = "오늘 바로 써먹는 표현이에요."
 private const val OUTRO_JP = "聞き取りが終わりました。"
 private const val OUTRO_KR = "듣기가 끝났습니다."

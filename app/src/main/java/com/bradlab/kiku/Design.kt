@@ -38,6 +38,7 @@ fun clipArt(clip: Clip): ArtSpec {
         "응답" in c -> ArtSpec("即答", listOf(Color(0xFF6B1E3F), Color(0xFF330C1C)))  // 즉시응답(퀴즈)
         "청해" in c -> ArtSpec("聴解", listOf(Color(0xFF1E4C6B), Color(0xFF0C2333)))  // 실전 청해
         "쇼핑" in c || "매장" in c -> ArtSpec("買物", listOf(Color(0xFF2E6B3F), Color(0xFF16331F)))  // 매장·쇼핑
+        "한입" in c -> ArtSpec("日", listOf(Color(0xFF6B2E2E), Color(0xFF331616)))  // 일본 한입(CULTURE)
         else -> ArtSpec("会社", listOf(Color(0xFF2B3A67), Color(0xFF16213E)))
     }
 }

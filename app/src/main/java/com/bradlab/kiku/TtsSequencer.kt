@@ -85,8 +85,8 @@ class TtsSequencer(
             while (currentStepIndex < steps.size) {
                 val step = steps[currentStepIndex]
                 _state.update { st ->
-                    if (clip?.mode == ClipMode.QUIZ || clip?.mode == ClipMode.LISTENING) {
-                        // QUIZ/LISTENING: 화면은 스텝의 showJp/showKr을 따라감(null=유지). speaker 배지는 숨김.
+                    if (clip?.mode == ClipMode.QUIZ || clip?.mode == ClipMode.LISTENING || clip?.mode == ClipMode.CULTURE) {
+                        // QUIZ/LISTENING/CULTURE: 화면은 스텝의 showJp/showKr을 따라감(null=유지). speaker 배지는 숨김.
                         var n = st.copy(sentenceIndex = step.sentenceIndex, kind = step.kind, speaker = null)
                         step.showJp?.let { n = n.copy(sentenceJp = it, words = emptyList()) }
                         step.showKr?.let { n = n.copy(sentenceKr = it) }
@@ -199,12 +199,12 @@ class TtsSequencer(
             // 대화: 일본어 문장 + 한국어 해석은 화자별 목소리(같은 슬롯 → 성별 일치, 짝마다 순서 무작위).
             //       단어(일/한)만 한 목소리(나레이터, 인덱스 0)로 통일.
             // 일반 문장(DRILL): 문장 순서로 번갈아(기존 동작).
-            val idx = if (clip?.mode == ClipMode.QUIZ || clip?.mode == ClipMode.LISTENING) {
+            val idx = if (clip?.mode == ClipMode.QUIZ || clip?.mode == ClipMode.LISTENING || clip?.mode == ClipMode.CULTURE) {
                 // 화자별 목소리(일본어·한국어 공통). 男=슬롯1(남성), 女=슬롯0(여성).
-                // 화자 없는 것(상황·문제·선택지·번호·정답)은 내레이터(슬롯0).
+                // 화자 없는 것(상황·문제·선택지·번호·정답)·CULTURE 내레이터("N")는 슬롯0.
                 when (step.speaker) {
                     "B", "男" -> 1
-                    else -> 0   // "A"/"女"/null
+                    else -> 0   // "A"/"女"/"N"/null
                 }
             } else {
                 val speaker = clip?.sentences?.getOrNull(step.sentenceIndex)?.speaker
