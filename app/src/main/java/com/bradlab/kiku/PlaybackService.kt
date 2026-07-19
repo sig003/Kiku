@@ -61,6 +61,7 @@ class PlaybackService : Service() {
     private var currentShuffled = false      // 랜덤/셔플 재생이면 위치 저장 안 함
     private var currentRandomLevel: String? = null   // 전체 랜덤의 레벨 필터(전체/N4/N3)
     private var lastSavedSentence = -1
+    private var advancingCulture = false      // 한입 자동 이어재생 중복 진입 방지
 
     // 딩동 효과음(퀴즈 반복 신호). SoundPool = 짧은 SFX 저지연 재생.
     private var soundPool: SoundPool? = null
@@ -130,8 +131,14 @@ class PlaybackService : Service() {
         ensureChannel()
         scope.launch {
             sequencer.state.collect { st ->
-                render(st)
                 saveProgress(st)   // 진행 위치 저장(순차·실제 클립만)
+                // 일본 한입(CULTURE)은 한 편이 끝나면 다음 편으로 자동 연결 — "걸으며 계속 듣기".
+                if (st.finished && st.mode == ClipMode.CULTURE && !advancingCulture) {
+                    advancingCulture = true
+                    val advanced = try { startNextCulture(st.clipId) } finally { advancingCulture = false }
+                    if (advanced) return@collect   // 다음 편 재생 시작 → 아래 정지 처리 건너뜀
+                }
+                render(st)
             }
         }
     }
@@ -193,6 +200,39 @@ class PlaybackService : Service() {
             }
         }
     }
+
+    /**
+     * 일본 한입(CULTURE) 자동 이어재생 — 방금 끝낸 편을 "들음"으로 기록하고 다음 편을 적재·재생한다.
+     * 선택 규칙: **안 들은 편 중 무작위**. 전부 들었으면 기록을 리셋하고 한 바퀴 더(방금 편만 제외).
+     * @return 다음 편을 시작했으면 true. false면 호출부가 평소대로 정지 처리한다.
+     */
+    private suspend fun startNextCulture(finishedId: Int): Boolean {
+        if (finishedId < 1) return false
+        progress.edit().putBoolean(heardKey(finishedId), true).apply()
+
+        val pool = repo.clips().filter { it.mode == ClipMode.CULTURE }
+        val others = pool.filter { it.id != finishedId }
+        if (others.isEmpty()) return false   // 편이 하나뿐 → 평소대로 종료
+
+        val unheard = others.filter { !progress.getBoolean(heardKey(it.id), false) }
+        val candidates = unheard.ifEmpty {
+            // 다 들었음 → 기록 리셋 후 새 바퀴(방금 편은 들은 것으로 남겨 바로 재등장 방지)
+            progress.edit()
+                .apply { pool.forEach { remove(heardKey(it.id)) } }
+                .putBoolean(heardKey(finishedId), true)
+                .apply()
+            others
+        }
+
+        currentShuffled = false
+        lastSavedSentence = -1
+        sequencer.pause()
+        sequencer.load(candidates.random(), 0, shuffled = false)
+        play()
+        return true
+    }
+
+    private fun heardKey(clipId: Int) = "heard_$clipId"
 
     /** 진행 위치 저장: 순차·실제 클립만. 끝까지 들으면 위치를 지워 다음엔 처음부터(정리). */
     private fun saveProgress(st: PlayerUiState) {

@@ -71,10 +71,6 @@ data class GrammarNote(val title: String, val meaning: String, val example: Line
 @Serializable
 data class Phrase(val jp: String, val kr: String)
 
-/** 끝에 이어 듣는 실전 대화 참조 — 기존 대화 클립을 clipId로 가리킴(콘텐츠 중복 안 만듦). */
-@Serializable
-data class DrillRef(val level: String = "N4", val mode: String = "DIALOGUE", val clipId: Int = -1, val title: String = "")
-
 /** CULTURE 본문. */
 @Serializable
 data class CultureContent(
@@ -83,7 +79,6 @@ data class CultureContent(
     val words: List<CultureWord> = emptyList(),
     val grammar: List<GrammarNote> = emptyList(),
     val phrase: Phrase? = null,
-    val drill: DrillRef? = null,
 )
 
 /**
@@ -414,43 +409,62 @@ private fun Clip.cultureSteps(): List<PlaybackStep> {
             showJp = "정리", showKr = c.summaryKr)
     }
 
-    // ── 단어(일→한) ──
+    // ── 단어(일→한) — 섹션 진입 안내(한국어) 먼저 ──
+    if (c.words.isNotEmpty()) {
+        out += PlaybackStep(lastIdx, StepKind.KR, WORDS_INTRO_KR, KO, pauseAfterMs = 500, speaker = "N",
+            showJp = WORDS_INTRO_KR, showKr = "")
+    }
     c.words.forEach { w ->
-        out += PlaybackStep(lastIdx, StepKind.WORD_JP, w.jp, JA, pauseAfterMs = 200, speaker = "N",
-            showJp = w.jp, showKr = w.kr)
-        out += PlaybackStep(lastIdx, StepKind.WORD_KR, w.kr, KO, pauseAfterMs = 500, speaker = "N",
+        out += PlaybackStep(lastIdx, StepKind.WORD_JP, w.jp, JA, pauseAfterMs = 800, speaker = "N",
+            showJp = w.jp, showKr = w.kr)   // 일→한 사이 = 뜻을 떠올릴 틈
+        out += PlaybackStep(lastIdx, StepKind.WORD_KR, w.kr, KO, pauseAfterMs = 900, speaker = "N",
             showKr = w.kr)
     }
 
-    // ── 문법(뜻kr + 예문 일→한) ──
+    // ── 문법(뜻kr + 예문 일→한) — 섹션 진입 안내(한국어) 먼저 ──
+    if (c.grammar.isNotEmpty()) {
+        out += PlaybackStep(lastIdx, StepKind.KR, GRAMMAR_INTRO_KR, KO, pauseAfterMs = 500, speaker = "N",
+            showJp = GRAMMAR_INTRO_KR, showKr = "")
+    }
     c.grammar.forEach { g ->
-        out += PlaybackStep(lastIdx, StepKind.KR, "${g.title}。${g.meaning}", KO, pauseAfterMs = 600, speaker = "N",
+        // 문형(일본어)과 뜻(한국어)은 반드시 스텝을 나눈다 — 한 스텝(KR)에 합치면 한국어 목소리가
+        // 일본어 문형을 읽고, 자리표시 "～"까지 한국어 규칙("무엇무엇")으로 치환돼 뜻과 뒤섞인다.
+        out += PlaybackStep(lastIdx, StepKind.JP, g.title, JA, pauseAfterMs = 800, speaker = "N",
             showJp = g.title, showKr = g.meaning)
-        out += PlaybackStep(lastIdx, StepKind.JP, g.example.jp, JA, pauseAfterMs = 500, speaker = "N",
+        out += PlaybackStep(lastIdx, StepKind.KR, g.meaning, KO, pauseAfterMs = 900, speaker = "N",
+            showKr = g.meaning)
+        out += PlaybackStep(lastIdx, StepKind.JP, g.example.jp, JA, pauseAfterMs = 800, speaker = "N",
             showJp = g.example.jp, showKr = g.example.kr)
-        out += PlaybackStep(lastIdx, StepKind.KR, g.example.kr, KO, pauseAfterMs = 800, speaker = "N",
+        out += PlaybackStep(lastIdx, StepKind.KR, g.example.kr, KO, pauseAfterMs = 1200, speaker = "N",
             showKr = g.example.kr)
     }
 
     // ── 오늘 바로 써먹는 표현(일→한) ──
     c.phrase?.let { p ->
         out += PlaybackStep(lastIdx, StepKind.KR, PHRASE_INTRO_KR, KO, pauseAfterMs = 500, speaker = "N",
-            showJp = "오늘 바로 써먹는 표현", showKr = PHRASE_INTRO_KR)
-        out += PlaybackStep(lastIdx, StepKind.JP, p.jp, JA, pauseAfterMs = 700, speaker = "N",
-            showJp = p.jp, showKr = p.kr)
-        out += PlaybackStep(lastIdx, StepKind.KR, p.kr, KO, pauseAfterMs = 900, speaker = "N",
+            showJp = PHRASE_INTRO_KR, showKr = "")
+        // 한 편의 마무리이자 "오늘 하나 배웠다"의 알맹이 → DRILL과 같은 리듬(일×3 → 한 → 일×1).
+        repeat(3) {
+            out += PlaybackStep(lastIdx, StepKind.JP, p.jp, JA, pauseAfterMs = 1800, speaker = "N",
+                showJp = p.jp, showKr = p.kr)
+        }
+        out += PlaybackStep(lastIdx, StepKind.KR, p.kr, KO, pauseAfterMs = 1200, speaker = "N",
             showKr = p.kr)
+        out += PlaybackStep(lastIdx, StepKind.JP, p.jp, JA, pauseAfterMs = 1500, speaker = "N",
+            showJp = p.jp, showKr = p.kr)   // 뜻을 알고 다시 한 번
     }
 
-    // ── 이어서: 실전 대화 안내(안내만; 자동 로드는 후속) ──
-    c.drill?.let { d ->
-        val t = d.title.ifEmpty { "실전 대화" }
-        out += PlaybackStep(lastIdx, StepKind.KR, "이어서 실전 대화, ‘$t’ 를 들어보세요.", KO, pauseAfterMs = 300, speaker = "N",
-            showJp = "▶ ${d.level} 대화", showKr = t)
-    }
+    // ── 마무리: 다음 편 예고(PlaybackService가 편이 끝나면 다음 한입을 자동 적재한다) ──
+    // 뒤 정지는 편과 편 사이 숨 고를 틈 — 이 스텝의 pauseAfterMs가 곧 다음 편 시작까지의 간격이다.
+    out += PlaybackStep(lastIdx, StepKind.KR, CULTURE_OUTRO_KR, KO, pauseAfterMs = 2500, speaker = "N",
+        showJp = CULTURE_OUTRO_KR, showKr = "")
     return out
 }
 
-private const val PHRASE_INTRO_KR = "오늘 바로 써먹는 표현이에요."
+// CULTURE 섹션 진입 안내(한국어) — 소리만 듣는 사용자가 "지금 어느 코너인지" 알게.
+private const val WORDS_INTRO_KR = "오늘의 단어"
+private const val GRAMMAR_INTRO_KR = "오늘의 문법"
+private const val PHRASE_INTRO_KR = "오늘의 바로 써먹는 표현"
+private const val CULTURE_OUTRO_KR = "다음 한입으로 이어집니다."
 private const val OUTRO_JP = "聞き取りが終わりました。"
 private const val OUTRO_KR = "듣기가 끝났습니다."
